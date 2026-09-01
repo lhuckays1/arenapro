@@ -1,0 +1,6 @@
+{
+  "name": "ArenaPro",
+  "description": "Plataforma SaaS multi-tenant de gestão e reservas online para arenas esportivas (Beach Tennis, Futevôlei, Vôlei de Areia e Society).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

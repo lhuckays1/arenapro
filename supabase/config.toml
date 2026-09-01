@@ -1,0 +1,2 @@
+[functions.create-arena-owner]
+verify_jwt = false
