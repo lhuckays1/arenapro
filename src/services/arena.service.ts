@@ -63,6 +63,56 @@ export const arenaService = {
     return sandboxDB.getArenas();
   },
 
+    // ==========================================================
+  // PLATFORM USERS
+  // Gestão global de usuários - SUPER_ADMIN
+  // ==========================================================
+  async getPlatformUsers(): Promise<any[]> {
+    if (isSupabaseConfigured) {
+      const { data, error } =
+        await supabase.functions.invoke(
+          'manage-platform-user',
+          {
+            body: {
+              action: 'LIST',
+            },
+          }
+        );
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data?.success) {
+        throw new Error(
+          data?.error ||
+          'Erro ao carregar usuários da plataforma.'
+        );
+      }
+
+      return data.users || [];
+    }
+
+    // Dados de demonstração somente quando
+    // o Supabase não estiver configurado.
+    return [
+      {
+        id: 'demo-super-admin',
+        email: 'admin@arenaxp.com',
+        full_name: 'Super Administrador',
+        phone: null,
+        role: 'SUPER_ADMIN',
+        profile_status: 'ACTIVE',
+        email_confirmed: true,
+        last_sign_in_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: null,
+        arena_count: 0,
+        arena_memberships: [],
+      },
+    ];
+  },
+
   async getArenaById(id: string): Promise<Arena | null> {
     if (isSupabaseConfigured) {
       const { data, error } = await supabase.from('arenas').select('*').eq('id', id).single();
