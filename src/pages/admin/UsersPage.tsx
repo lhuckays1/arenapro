@@ -24,6 +24,9 @@ import {
   X,
   AlertTriangle,
   Loader2,
+  KeyRound,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 import { arenaService } from '../../services/arena.service';
@@ -39,10 +42,6 @@ type UserRole =
   | 'ARENA_ADMIN'
   | 'ARENA_STAFF'
   | 'CLIENT';
-
-type UserStatus =
-  | 'ACTIVE'
-  | 'INACTIVE';
 
 interface ArenaMembership {
   id: string;
@@ -138,7 +137,7 @@ function cleanPhone(
 }
 
 /* ==========================================================
-   EXTRAIR ERRO REAL DA EDGE FUNCTION
+   EXTRAIR ERRO DA EDGE FUNCTION
 ========================================================== */
 
 async function getFunctionErrorMessage(
@@ -146,10 +145,6 @@ async function getFunctionErrorMessage(
   fallback: string,
 ): Promise<string> {
   try {
-    /*
-     * Supabase FunctionsHttpError normalmente
-     * possui o Response em error.context.
-     */
     if (
       error?.context instanceof Response
     ) {
@@ -176,10 +171,6 @@ async function getFunctionErrorMessage(
       }
     }
 
-    /*
-     * Alguns erros podem possuir
-     * context como objeto ou texto.
-     */
     if (
       typeof error?.context ===
       'string'
@@ -204,12 +195,7 @@ async function getFunctionErrorMessage(
     }
 
     return fallback;
-  } catch (parseError) {
-    console.error(
-      'Erro ao interpretar erro da Edge Function:',
-      parseError,
-    );
-
+  } catch {
     return (
       error?.message ||
       fallback
@@ -305,6 +291,28 @@ export const UsersPage: React.FC<{
       phone: '',
       role: 'CLIENT' as UserRole,
       arena_id: '',
+    });
+
+  /* ========================================================
+     RESET SENHA
+  ======================================================== */
+
+  const [isResetPasswordModalOpen, setIsResetPasswordModalOpen] =
+    useState(false);
+
+  const [resetPasswordLoading, setResetPasswordLoading] =
+    useState(false);
+
+  const [showResetPassword, setShowResetPassword] =
+    useState(false);
+
+  const [showResetPasswordConfirm, setShowResetPasswordConfirm] =
+    useState(false);
+
+  const [resetPasswordForm, setResetPasswordForm] =
+    useState({
+      password: '',
+      confirmPassword: '',
     });
 
   /* ========================================================
@@ -417,7 +425,7 @@ export const UsersPage: React.FC<{
   }, [users]);
 
   /* ========================================================
-     FILTRAR
+     FILTRAR USUÁRIOS
   ======================================================== */
 
   const filteredUsers =
@@ -429,9 +437,6 @@ export const UsersPage: React.FC<{
 
       return users.filter(
         (user) => {
-          /*
-           * Perfil
-           */
           if (
             roleFilter !==
               'ALL' &&
@@ -441,9 +446,6 @@ export const UsersPage: React.FC<{
             return false;
           }
 
-          /*
-           * Status
-           */
           if (
             statusFilter !==
               'ALL' &&
@@ -453,9 +455,6 @@ export const UsersPage: React.FC<{
             return false;
           }
 
-          /*
-           * Arena
-           */
           if (
             arenaFilter !==
               'ALL'
@@ -472,9 +471,6 @@ export const UsersPage: React.FC<{
             }
           }
 
-          /*
-           * Busca
-           */
           if (!query) {
             return true;
           }
@@ -528,7 +524,7 @@ export const UsersPage: React.FC<{
   }
 
   /* ========================================================
-     RESET CREATE
+     RESET CREATE FORM
   ======================================================== */
 
   const resetCreateForm =
@@ -622,12 +618,16 @@ export const UsersPage: React.FC<{
           );
         }
 
-        const { data, error } =
+        const {
+          data,
+          error,
+        } =
           await supabase.functions.invoke(
             'manage-platform-user',
             {
               body: {
-                action: 'CREATE',
+                action:
+                  'CREATE',
 
                 user: {
                   full_name:
@@ -805,7 +805,8 @@ export const UsersPage: React.FC<{
         }
 
         const payload = {
-          action: 'UPDATE',
+          action:
+            'UPDATE',
 
           user_id:
             selectedUser.id,
@@ -831,12 +832,10 @@ export const UsersPage: React.FC<{
           },
         };
 
-        console.log(
-          '[ArenaPro] UPDATE usuário:',
-          payload,
-        );
-
-        const { data, error } =
+        const {
+          data,
+          error,
+        } =
           await supabase.functions.invoke(
             'manage-platform-user',
             {
@@ -871,8 +870,6 @@ export const UsersPage: React.FC<{
         );
 
         setSelectedUser(null);
-
-        setError(null);
       } catch (err: any) {
         console.error(
           'Erro ao atualizar usuário:',
@@ -885,6 +882,189 @@ export const UsersPage: React.FC<{
         );
       } finally {
         setManageLoading(false);
+      }
+    };
+
+  /* ========================================================
+     RESET SENHA
+  ======================================================== */
+
+  const openResetPasswordModal =
+    () => {
+      if (!selectedUser) {
+        return;
+      }
+
+      setResetPasswordForm({
+        password: '',
+        confirmPassword: '',
+      });
+
+      setShowResetPassword(false);
+      setShowResetPasswordConfirm(
+        false,
+      );
+
+      setError(null);
+
+      setIsResetPasswordModalOpen(
+        true,
+      );
+    };
+
+  /* ========================================================
+     FECHAR RESET SENHA
+  ======================================================== */
+
+  const closeResetPasswordModal =
+    () => {
+      if (
+        resetPasswordLoading
+      ) {
+        return;
+      }
+
+      setIsResetPasswordModalOpen(
+        false,
+      );
+
+      setResetPasswordForm({
+        password: '',
+        confirmPassword: '',
+      });
+
+      setShowResetPassword(false);
+      setShowResetPasswordConfirm(
+        false,
+      );
+    };
+
+  /* ========================================================
+     REDEFINIR SENHA
+  ======================================================== */
+
+  const handleResetPassword =
+    async (
+      event: React.FormEvent,
+    ) => {
+      event.preventDefault();
+
+      if (!selectedUser) {
+        return;
+      }
+
+      setError(null);
+
+      try {
+        setResetPasswordLoading(
+          true,
+        );
+
+        const password =
+          resetPasswordForm.password;
+
+        const confirmPassword =
+          resetPasswordForm.confirmPassword;
+
+        if (
+          password.length <
+          6
+        ) {
+          throw new Error(
+            'A nova senha deve possuir pelo menos 6 caracteres.',
+          );
+        }
+
+        if (
+          password !==
+          confirmPassword
+        ) {
+          throw new Error(
+            'A confirmação da senha não confere.',
+          );
+        }
+
+        const payload = {
+          action:
+            'RESET_PASSWORD',
+
+          user_id:
+            selectedUser.id,
+
+          password,
+        };
+
+        console.log(
+          '[ArenaPro] RESET_PASSWORD:',
+          {
+            action:
+              payload.action,
+            user_id:
+              payload.user_id,
+          },
+        );
+
+        const {
+          data,
+          error,
+        } =
+          await supabase.functions.invoke(
+            'manage-platform-user',
+            {
+              body: payload,
+            },
+          );
+
+        if (error) {
+          const message =
+            await getFunctionErrorMessage(
+              error,
+              'Erro ao redefinir senha.',
+            );
+
+          throw new Error(
+            message,
+          );
+        }
+
+        if (!data?.success) {
+          throw new Error(
+            data?.error ||
+              data?.message ||
+              'A Edge Function não confirmou a alteração da senha.',
+          );
+        }
+
+        closeResetPasswordModal();
+
+        /*
+         * Mantemos o modal de gerenciamento
+         * aberto e apenas mostramos o sucesso.
+         */
+        setError(null);
+
+        window.setTimeout(
+          () => {
+            alert(
+              'Senha redefinida com sucesso.',
+            );
+          },
+          50,
+        );
+      } catch (err: any) {
+        console.error(
+          'Erro ao redefinir senha:',
+          err,
+        );
+
+        setError(
+          err?.message ||
+            'Erro ao redefinir senha.',
+        );
+      } finally {
+        setResetPasswordLoading(
+          false,
+        );
       }
     };
 
@@ -927,12 +1107,10 @@ export const UsersPage: React.FC<{
             selectedUser.id,
         };
 
-        console.log(
-          '[ArenaPro] Alterar status:',
-          payload,
-        );
-
-        const { data, error } =
+        const {
+          data,
+          error,
+        } =
           await supabase.functions.invoke(
             'manage-platform-user',
             {
@@ -962,11 +1140,23 @@ export const UsersPage: React.FC<{
 
         await loadUsers();
 
-        setIsManageModalOpen(
-          false,
+        /*
+         * Atualizar o objeto selecionado
+         * sem fechar o modal.
+         */
+        setSelectedUser(
+          (current) =>
+            current
+              ? {
+                  ...current,
+                  profile_status:
+                    action ===
+                    'ACTIVATE'
+                      ? 'ACTIVE'
+                      : 'INACTIVE',
+                }
+              : null,
         );
-
-        setSelectedUser(null);
       } catch (err: any) {
         console.error(
           'Erro ao alterar status:',
@@ -1050,18 +1240,17 @@ export const UsersPage: React.FC<{
         setDeleteLoading(true);
 
         const payload = {
-          action: 'DELETE',
+          action:
+            'DELETE',
 
           user_id:
             selectedUser.id,
         };
 
-        console.log(
-          '[ArenaPro] DELETE usuário:',
-          payload,
-        );
-
-        const { data, error } =
+        const {
+          data,
+          error,
+        } =
           await supabase.functions.invoke(
             'manage-platform-user',
             {
@@ -1126,9 +1315,9 @@ export const UsersPage: React.FC<{
   return (
     <div className="space-y-5 animate-fadeIn">
 
-      {/* ======================================================
+      {/* ====================================================
           CABEÇALHO
-      ====================================================== */}
+      ==================================================== */}
 
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
 
@@ -1196,9 +1385,9 @@ export const UsersPage: React.FC<{
 
       </div>
 
-      {/* ======================================================
+      {/* ====================================================
           ERRO
-      ====================================================== */}
+      ==================================================== */}
 
       {error && (
 
@@ -1217,20 +1406,20 @@ export const UsersPage: React.FC<{
             }
             className="text-rose-400 hover:text-white"
           >
+
             <X className="w-4 h-4" />
+
           </button>
 
         </div>
 
       )}
 
-      {/* ======================================================
+      {/* ====================================================
           CARDS
-      ====================================================== */}
+      ==================================================== */}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-
-        {/* TOTAL */}
 
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
 
@@ -1253,8 +1442,6 @@ export const UsersPage: React.FC<{
           </div>
 
         </div>
-
-        {/* SUPER ADMINS */}
 
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
 
@@ -1284,8 +1471,6 @@ export const UsersPage: React.FC<{
 
         </div>
 
-        {/* ADMINISTRADORES */}
-
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
 
           <div className="flex items-center justify-between">
@@ -1313,8 +1498,6 @@ export const UsersPage: React.FC<{
           </div>
 
         </div>
-
-        {/* CLIENTES */}
 
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
 
@@ -1346,15 +1529,13 @@ export const UsersPage: React.FC<{
 
       </div>
 
-      {/* ======================================================
+      {/* ====================================================
           FILTROS
-      ====================================================== */}
+      ==================================================== */}
 
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-
-          {/* BUSCA */}
 
           <div className="relative">
 
@@ -1375,8 +1556,6 @@ export const UsersPage: React.FC<{
             />
 
           </div>
-
-          {/* PERFIL */}
 
           <select
             value={
@@ -1412,8 +1591,6 @@ export const UsersPage: React.FC<{
 
           </select>
 
-          {/* ARENA */}
-
           <select
             value={
               arenaFilter
@@ -1442,8 +1619,6 @@ export const UsersPage: React.FC<{
             )}
 
           </select>
-
-          {/* STATUS */}
 
           <select
             value={
@@ -1475,9 +1650,9 @@ export const UsersPage: React.FC<{
 
       </div>
 
-      {/* ======================================================
+      {/* ====================================================
           TABELA
-      ====================================================== */}
+      ==================================================== */}
 
       <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
 
@@ -1538,7 +1713,8 @@ export const UsersPage: React.FC<{
 
                 </tr>
 
-              ) : filteredUsers.length === 0 ? (
+              ) : filteredUsers.length ===
+                0 ? (
 
                 <tr>
 
@@ -1578,8 +1754,6 @@ export const UsersPage: React.FC<{
                         }
                         className="hover:bg-slate-800/40 transition"
                       >
-
-                        {/* USUÁRIO */}
 
                         <td className="px-4 py-3">
 
@@ -1638,8 +1812,6 @@ export const UsersPage: React.FC<{
 
                         </td>
 
-                        {/* EMAIL */}
-
                         <td className="px-4 py-3">
 
                           <div className="flex items-center gap-1.5 text-slate-400">
@@ -1651,8 +1823,6 @@ export const UsersPage: React.FC<{
                           </div>
 
                         </td>
-
-                        {/* PERFIL */}
 
                         <td className="px-4 py-3">
 
@@ -1673,8 +1843,6 @@ export const UsersPage: React.FC<{
                           </span>
 
                         </td>
-
-                        {/* ARENA */}
 
                         <td className="px-4 py-3">
 
@@ -1744,8 +1912,6 @@ export const UsersPage: React.FC<{
 
                         </td>
 
-                        {/* STATUS */}
-
                         <td className="px-4 py-3">
 
                           {user.profile_status ===
@@ -1772,8 +1938,6 @@ export const UsersPage: React.FC<{
                           )}
 
                         </td>
-
-                        {/* AÇÕES */}
 
                         <td className="px-4 py-3 text-right">
 
@@ -1835,9 +1999,9 @@ export const UsersPage: React.FC<{
 
       </div>
 
-      {/* ======================================================
+      {/* ====================================================
           MODAL NOVO USUÁRIO
-      ====================================================== */}
+      ==================================================== */}
 
       {isCreateModalOpen && (
 
@@ -1880,8 +2044,6 @@ export const UsersPage: React.FC<{
               className="p-5 space-y-4"
             >
 
-              {/* NOME */}
-
               <div>
 
                 <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">
@@ -1910,8 +2072,6 @@ export const UsersPage: React.FC<{
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-                {/* EMAIL */}
-
                 <div>
 
                   <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">
@@ -1937,8 +2097,6 @@ export const UsersPage: React.FC<{
                   />
 
                 </div>
-
-                {/* TELEFONE */}
 
                 <div>
 
@@ -1969,8 +2127,6 @@ export const UsersPage: React.FC<{
 
                 </div>
 
-                {/* SENHA */}
-
                 <div>
 
                   <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">
@@ -1996,8 +2152,6 @@ export const UsersPage: React.FC<{
                   />
 
                 </div>
-
-                {/* PERFIL */}
 
                 <div>
 
@@ -2051,8 +2205,6 @@ export const UsersPage: React.FC<{
                 </div>
 
               </div>
-
-              {/* ARENA */}
 
               {createForm.role !==
                 'SUPER_ADMIN' && (
@@ -2118,8 +2270,6 @@ export const UsersPage: React.FC<{
 
               )}
 
-              {/* AÇÕES */}
-
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
 
                 <button
@@ -2171,9 +2321,9 @@ export const UsersPage: React.FC<{
 
       )}
 
-      {/* ======================================================
+      {/* ====================================================
           MODAL GERENCIAR
-      ====================================================== */}
+      ==================================================== */}
 
       {isManageModalOpen &&
         selectedUser && (
@@ -2526,117 +2676,143 @@ export const UsersPage: React.FC<{
 
               <div className="pt-3 border-t border-slate-800">
 
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                <div className="flex flex-col gap-3">
 
-                  {/* ATIVAR / DESATIVAR */}
+                  {/* RESET SENHA */}
 
                   <button
                     type="button"
                     onClick={
-                      handleToggleStatus
+                      openResetPasswordModal
                     }
                     disabled={
-                      selectedUser.id ===
-                        currentUserId ||
-                      statusLoading ||
-                      manageLoading
+                      manageLoading ||
+                      statusLoading
                     }
-                    className={`px-3 py-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition disabled:opacity-40 disabled:cursor-not-allowed ${
-                      selectedUser.profile_status ===
-                      'ACTIVE'
-                        ? 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
-                        : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
-                    }`}
+                    className="w-full px-3 py-2.5 rounded-xl border border-blue-500/30 bg-blue-500/10 text-blue-300 hover:bg-blue-500/20 transition text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-40"
                   >
 
-                    {statusLoading ? (
+                    <KeyRound className="w-4 h-4" />
 
-                      <Loader2 className="w-4 h-4 animate-spin" />
-
-                    ) : selectedUser.profile_status ===
-                      'ACTIVE' ? (
-
-                      <Ban className="w-4 h-4" />
-
-                    ) : (
-
-                      <UserCheck className="w-4 h-4" />
-
-                    )}
-
-                    {selectedUser.profile_status ===
-                    'ACTIVE'
-                      ? 'Desativar'
-                      : 'Ativar'}
+                    Redefinir senha
 
                   </button>
 
-                  <div className="flex items-center justify-end gap-2">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
 
-                    {/* EXCLUIR */}
+                    {/* STATUS */}
 
                     <button
                       type="button"
                       onClick={
-                        openDeleteModal
+                        handleToggleStatus
                       }
                       disabled={
                         selectedUser.id ===
-                        currentUserId
+                          currentUserId ||
+                        statusLoading ||
+                        manageLoading
                       }
-                      className="px-3 py-2.5 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 transition text-xs font-bold flex items-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed"
+                      className={`px-3 py-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition disabled:opacity-40 disabled:cursor-not-allowed ${
+                        selectedUser.profile_status ===
+                        'ACTIVE'
+                          ? 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
+                          : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
+                      }`}
                     >
 
-                      <Trash2 className="w-4 h-4" />
+                      {statusLoading ? (
 
-                      Excluir
+                        <Loader2 className="w-4 h-4 animate-spin" />
 
-                    </button>
+                      ) : selectedUser.profile_status ===
+                        'ACTIVE' ? (
 
-                    {/* CANCELAR */}
-
-                    <button
-                      type="button"
-                      onClick={
-                        closeManageModal
-                      }
-                      disabled={
-                        manageLoading ||
-                        statusLoading
-                      }
-                      className="px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white transition text-xs font-bold"
-                    >
-                      Cancelar
-                    </button>
-
-                    {/* SALVAR */}
-
-                    <button
-                      type="submit"
-                      disabled={
-                        manageLoading ||
-                        statusLoading
-                      }
-                      className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 transition text-xs font-bold flex items-center gap-2 disabled:opacity-50"
-                    >
-
-                      {manageLoading ? (
-
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Salvando...
-                        </>
+                        <Ban className="w-4 h-4" />
 
                       ) : (
 
-                        <>
-                          <Save className="w-4 h-4" />
-                          Salvar
-                        </>
+                        <UserCheck className="w-4 h-4" />
 
                       )}
 
+                      {selectedUser.profile_status ===
+                      'ACTIVE'
+                        ? 'Desativar'
+                        : 'Ativar'}
+
                     </button>
+
+                    <div className="flex items-center justify-end gap-2">
+
+                      {/* EXCLUIR */}
+
+                      <button
+                        type="button"
+                        onClick={
+                          openDeleteModal
+                        }
+                        disabled={
+                          selectedUser.id ===
+                          currentUserId
+                        }
+                        className="px-3 py-2.5 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 transition text-xs font-bold flex items-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+
+                        <Trash2 className="w-4 h-4" />
+
+                        Excluir
+
+                      </button>
+
+                      {/* CANCELAR */}
+
+                      <button
+                        type="button"
+                        onClick={
+                          closeManageModal
+                        }
+                        disabled={
+                          manageLoading ||
+                          statusLoading
+                        }
+                        className="px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white transition text-xs font-bold"
+                      >
+
+                        Cancelar
+
+                      </button>
+
+                      {/* SALVAR */}
+
+                      <button
+                        type="submit"
+                        disabled={
+                          manageLoading ||
+                          statusLoading
+                        }
+                        className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 transition text-xs font-bold flex items-center gap-2 disabled:opacity-50"
+                      >
+
+                        {manageLoading ? (
+
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Salvando...
+                          </>
+
+                        ) : (
+
+                          <>
+                            <Save className="w-4 h-4" />
+                            Salvar
+                          </>
+
+                        )}
+
+                      </button>
+
+                    </div>
 
                   </div>
 
@@ -2652,18 +2828,312 @@ export const UsersPage: React.FC<{
 
       )}
 
-      {/* ======================================================
-          MODAL CONFIRMAÇÃO DE EXCLUSÃO
-      ====================================================== */}
+      {/* ====================================================
+          MODAL RESET SENHA
+      ==================================================== */}
+
+      {isResetPasswordModalOpen &&
+        selectedUser && (
+
+        <div className="fixed inset-0 z-[70] bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-4">
+
+          <div className="w-full max-w-md bg-slate-900 border border-blue-500/30 rounded-2xl shadow-2xl overflow-hidden">
+
+            {/* HEADER */}
+
+            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+
+              <div className="flex items-center gap-3">
+
+                <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
+
+                  <KeyRound className="w-5 h-5 text-blue-400" />
+
+                </div>
+
+                <div>
+
+                  <h3 className="text-base font-bold text-white">
+                    Redefinir senha
+                  </h3>
+
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Defina uma nova senha para o usuário.
+                  </p>
+
+                </div>
+
+              </div>
+
+              <button
+                type="button"
+                onClick={
+                  closeResetPasswordModal
+                }
+                disabled={
+                  resetPasswordLoading
+                }
+                className="p-2 rounded-lg text-slate-500 hover:text-white hover:bg-slate-800 transition"
+              >
+
+                <X className="w-4 h-4" />
+
+              </button>
+
+            </div>
+
+            <form
+              onSubmit={
+                handleResetPassword
+              }
+              className="p-5 space-y-4"
+            >
+
+              {/* USUÁRIO */}
+
+              <div className="bg-slate-950 border border-slate-800 rounded-xl p-3">
+
+                <div className="flex items-center gap-3">
+
+                  <div className="w-9 h-9 rounded-xl bg-slate-800 flex items-center justify-center">
+
+                    {selectedUser.role ===
+                    'SUPER_ADMIN' ? (
+
+                      <Shield className="w-4 h-4 text-purple-300" />
+
+                    ) : (
+
+                      <User className="w-4 h-4 text-slate-400" />
+
+                    )}
+
+                  </div>
+
+                  <div className="min-w-0">
+
+                    <p className="text-xs font-bold text-slate-200 truncate">
+                      {selectedUser.full_name}
+                    </p>
+
+                    <p className="text-[10px] text-slate-500 truncate">
+                      {selectedUser.email}
+                    </p>
+
+                  </div>
+
+                </div>
+
+              </div>
+
+              {/* NOVA SENHA */}
+
+              <div>
+
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">
+                  Nova senha
+                </label>
+
+                <div className="relative">
+
+                  <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
+
+                  <input
+                    type={
+                      showResetPassword
+                        ? 'text'
+                        : 'password'
+                    }
+                    value={
+                      resetPasswordForm.password
+                    }
+                    onChange={(e) =>
+                      setResetPasswordForm(
+                        (current) => ({
+                          ...current,
+                          password:
+                            e.target.value,
+                        }),
+                      )
+                    }
+                    placeholder="Mínimo 6 caracteres"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-10 py-3 text-xs text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowResetPassword(
+                        (current) =>
+                          !current,
+                      )
+                    }
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                  >
+
+                    {showResetPassword ? (
+
+                      <EyeOff className="w-4 h-4" />
+
+                    ) : (
+
+                      <Eye className="w-4 h-4" />
+
+                    )}
+
+                  </button>
+
+                </div>
+
+                <p className="text-[9px] text-slate-600 mt-1">
+                  A senha deve possuir pelo menos 6 caracteres.
+                </p>
+
+              </div>
+
+              {/* CONFIRMAR SENHA */}
+
+              <div>
+
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">
+                  Confirmar nova senha
+                </label>
+
+                <div className="relative">
+
+                  <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
+
+                  <input
+                    type={
+                      showResetPasswordConfirm
+                        ? 'text'
+                        : 'password'
+                    }
+                    value={
+                      resetPasswordForm.confirmPassword
+                    }
+                    onChange={(e) =>
+                      setResetPasswordForm(
+                        (current) => ({
+                          ...current,
+                          confirmPassword:
+                            e.target.value,
+                        }),
+                      )
+                    }
+                    placeholder="Digite a senha novamente"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-10 py-3 text-xs text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowResetPasswordConfirm(
+                        (current) =>
+                          !current,
+                      )
+                    }
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                  >
+
+                    {showResetPasswordConfirm ? (
+
+                      <EyeOff className="w-4 h-4" />
+
+                    ) : (
+
+                      <Eye className="w-4 h-4" />
+
+                    )}
+
+                  </button>
+
+                </div>
+
+              </div>
+
+              {/* AVISO */}
+
+              <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-3">
+
+                <div className="flex gap-2">
+
+                  <AlertTriangle className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+
+                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                    A senha atual será substituída imediatamente pela nova senha.
+                    O usuário deverá utilizar essa nova senha no próximo login.
+                  </p>
+
+                </div>
+
+              </div>
+
+              {/* BOTÕES */}
+
+              <div className="flex justify-end gap-2 pt-2">
+
+                <button
+                  type="button"
+                  onClick={
+                    closeResetPasswordModal
+                  }
+                  disabled={
+                    resetPasswordLoading
+                  }
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white transition text-xs font-bold"
+                >
+
+                  Cancelar
+
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={
+                    resetPasswordLoading
+                  }
+                  className="px-4 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-400 text-white transition text-xs font-bold flex items-center gap-2 disabled:opacity-50"
+                >
+
+                  {resetPasswordLoading ? (
+
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Redefinindo...
+                    </>
+
+                  ) : (
+
+                    <>
+                      <KeyRound className="w-4 h-4" />
+                      Redefinir senha
+                    </>
+
+                  )}
+
+                </button>
+
+              </div>
+
+            </form>
+
+          </div>
+
+        </div>
+
+      )}
+
+      {/* ====================================================
+          MODAL CONFIRMAÇÃO EXCLUSÃO
+      ==================================================== */}
 
       {isDeleteModalOpen &&
         selectedUser && (
 
-        <div className="fixed inset-0 z-[60] bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[80] bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-4">
 
           <div className="w-full max-w-md bg-slate-900 border border-rose-500/30 rounded-2xl shadow-2xl overflow-hidden">
-
-            {/* HEADER */}
 
             <div className="px-5 py-4 border-b border-slate-800">
 
@@ -2690,8 +3160,6 @@ export const UsersPage: React.FC<{
               </div>
 
             </div>
-
-            {/* CONTEÚDO */}
 
             <div className="p-5">
 
@@ -2733,18 +3201,12 @@ export const UsersPage: React.FC<{
               <div className="mt-4 bg-rose-500/5 border border-rose-500/20 rounded-xl p-3">
 
                 <p className="text-xs text-rose-300 leading-relaxed">
-
-                  O usuário será removido
-                  permanentemente do sistema,
-                  incluindo seu acesso à
-                  plataforma e seus vínculos
-                  com arenas.
-
+                  O usuário será removido permanentemente
+                  do sistema, incluindo seu acesso à
+                  plataforma e seus vínculos com arenas.
                 </p>
 
               </div>
-
-              {/* BOTÕES */}
 
               <div className="flex justify-end gap-2 mt-5">
 
