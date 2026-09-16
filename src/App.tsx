@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AdminLayout } from './layouts/AdminLayout';
 import { ClientLayout } from './layouts/ClientLayout';
@@ -39,53 +39,71 @@ const AppContent: React.FC = () => {
     loading,
   } = useAuth();
 
-  // Rota inicial padrão.
-  // Para usuários administrativos, a Agenda será aberta após o login.
-  const [currentPath, setCurrentPath] = useState<string>('/admin/agenda');
+  /*
+   * Mantemos a rota atual somente em estado.
+   * A navegação do AdminLayout usa diretamente esta função.
+   */
+  const [currentPath, setCurrentPath] = useState<string>(() => {
+    return '/admin/dashboard';
+  });
 
-  // ============================================================
-  // REDIRECIONAMENTO AUTOMÁTICO APÓS LOGIN
-  // ============================================================
+  /*
+   * Navegação centralizada.
+   *
+   * O uso de uma função própria evita que diferentes componentes
+   * manipulem currentPath de maneiras diferentes.
+   */
+  const navigate = (path: string) => {
+    console.log('[ArenaPro] Navegando para:', path);
+    setCurrentPath(path);
+  };
+
+  /*
+   * Redirecionamentos SOMENTE relacionados à autenticação.
+   *
+   * Importante:
+   * Não devemos alterar a rota quando o usuário simplesmente
+   * clica em Dashboard, Agenda, Reservas etc.
+   */
   useEffect(() => {
-    if (!loading && user && profile) {
+    if (loading || !user || !profile) {
+      return;
+    }
 
-      // CLIENT
-      if (profile.role === 'CLIENT') {
-        // Cliente não pode acessar o painel administrativo
-        if (currentPath.startsWith('/admin')) {
-          setCurrentPath('/app/inicio');
-        }
-        return;
+    // Cliente não pode acessar o painel administrativo.
+    if (profile.role === 'CLIENT') {
+      if (currentPath.startsWith('/admin')) {
+        setCurrentPath('/app/inicio');
       }
 
-      // SUPER ADMIN
+      return;
+    }
+
+    /*
+     * Após login:
+     *
+     * SUPER_ADMIN → Gestão SaaS
+     * Demais administradores → Dashboard
+     *
+     * Esse redirecionamento só acontece se ainda estivermos
+     * em uma rota de autenticação.
+     */
+    if (
+      currentPath === '/login' ||
+      currentPath === '/' ||
+      currentPath === ''
+    ) {
       if (profile.role === 'SUPER_ADMIN') {
-        // Após login, SUPER_ADMIN vai para a gestão SaaS
-        if (currentPath === '/login' || currentPath === '/admin/dashboard') {
-          setCurrentPath('/admin/saas');
-        }
-        return;
-      }
-
-      // ARENA_ADMIN / ARENA_STAFF
-      if (
-        profile.role === 'ARENA_ADMIN' ||
-        profile.role === 'ARENA_STAFF'
-      ) {
-        // Após login, abre diretamente a Agenda
-        if (
-          currentPath === '/login' ||
-          currentPath === '/admin/dashboard'
-        ) {
-          setCurrentPath('/admin/agenda');
-        }
+        setCurrentPath('/admin/saas');
+      } else {
+        setCurrentPath('/admin/dashboard');
       }
     }
-  }, [user, profile, loading, currentPath]);
+  }, [user, profile, loading]);
 
-  // ============================================================
-  // LOADING INICIAL
-  // ============================================================
+  /*
+   * Tela de carregamento inicial
+   */
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center space-y-4">
@@ -101,10 +119,12 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // ============================================================
-  // PORTAL PÚBLICO DA ARENA
-  // /arena/:slug
-  // ============================================================
+  /*
+   * Portal público da arena
+   *
+   * Exemplo:
+   * /arena/terceiro-tempo
+   */
   if (currentPath.startsWith('/arena/')) {
     const slug = currentPath
       .replace('/arena/', '')
@@ -113,39 +133,50 @@ const AppContent: React.FC = () => {
     return (
       <PublicArenaPortalPage
         slug={slug}
-        onNavigate={setCurrentPath}
+        onNavigate={navigate}
       />
     );
   }
 
-  // ============================================================
-  // USUÁRIO NÃO AUTENTICADO
-  // ============================================================
+  /*
+   * Usuário não autenticado
+   */
   if (!user) {
     if (currentPath === '/register') {
-      return <RegisterPage onNavigate={setCurrentPath} />;
+      return (
+        <RegisterPage
+          onNavigate={navigate}
+        />
+      );
     }
 
     if (currentPath === '/forgot-password') {
-      return <ForgotPasswordPage onNavigate={setCurrentPath} />;
+      return (
+        <ForgotPasswordPage
+          onNavigate={navigate}
+        />
+      );
     }
 
-    return <LoginPage onNavigate={setCurrentPath} />;
+    return (
+      <LoginPage
+        onNavigate={navigate}
+      />
+    );
   }
 
-  // ============================================================
-  // ROTAS AUTENTICADAS
-  // ============================================================
+  /*
+   * ============================================================
+   * ÁREA ADMINISTRATIVA
+   * ============================================================
+   */
   const isAdminRoute = currentPath.startsWith('/admin');
 
-  // ============================================================
-  // ÁREA ADMINISTRATIVA
-  // ============================================================
   if (isAdminRoute) {
 
-    // ----------------------------------------------------------
-    // CLIENT NÃO PODE ACESSAR ADMIN
-    // ----------------------------------------------------------
+    /*
+     * CLIENT nunca entra no painel administrativo.
+     */
     if (profile?.role === 'CLIENT') {
       if (currentPath !== '/app/inicio') {
         setCurrentPath('/app/inicio');
@@ -154,15 +185,17 @@ const AppContent: React.FC = () => {
       return null;
     }
 
-    // ----------------------------------------------------------
-    // GESTÃO SaaS
-    // EXCLUSIVA DO SUPER_ADMIN
-    // ----------------------------------------------------------
+    /*
+     * ========================================================
+     * GESTÃO SaaS
+     * ========================================================
+     */
     if (currentPath === '/admin/saas') {
 
       if (profile?.role !== 'SUPER_ADMIN') {
+
         if (activeArena) {
-          setCurrentPath('/admin/agenda');
+          setCurrentPath('/admin/dashboard');
         } else {
           setCurrentPath('/app/inicio');
         }
@@ -173,22 +206,24 @@ const AppContent: React.FC = () => {
       return (
         <AdminLayout
           currentPath={currentPath}
-          onNavigate={setCurrentPath}
+          onNavigate={navigate}
         >
-          <SaaSPage onNavigate={setCurrentPath} />
+          <SaaSPage
+            onNavigate={navigate}
+          />
         </AdminLayout>
       );
     }
 
-    // ----------------------------------------------------------
-    // ACESSO OPERACIONAL DA ARENA
-    //
-    // SUPER_ADMIN:
-    //   acesso liberado
-    //
-    // ARENA_ADMIN / ARENA_STAFF:
-    //   precisam de assinatura ACTIVE
-    // ----------------------------------------------------------
+    /*
+     * ========================================================
+     * ASSINATURA
+     * ========================================================
+     *
+     * SUPER_ADMIN pode acessar qualquer arena sem assinatura.
+     *
+     * ARENA_ADMIN / ARENA_STAFF precisam de assinatura ACTIVE.
+     */
     if (profile?.role !== 'SUPER_ADMIN') {
 
       if (!activeArena) {
@@ -211,106 +246,125 @@ const AppContent: React.FC = () => {
       }
     }
 
-    // ----------------------------------------------------------
-    // PAINEL ADMINISTRATIVO
-    // ----------------------------------------------------------
+    /*
+     * ========================================================
+     * PAINEL OPERACIONAL
+     * ========================================================
+     */
     return (
       <AdminLayout
         currentPath={currentPath}
-        onNavigate={setCurrentPath}
+        onNavigate={navigate}
       >
 
-        {/* Dashboard */}
+        {/* DASHBOARD */}
         {currentPath === '/admin/dashboard' && (
-          <DashboardPage onNavigate={setCurrentPath} />
+          <DashboardPage
+            onNavigate={navigate}
+          />
         )}
 
-        {/* Agenda */}
+        {/* AGENDA */}
         {currentPath === '/admin/agenda' && (
-          <AgendaPage onNavigate={setCurrentPath} />
+          <AgendaPage
+            onNavigate={navigate}
+          />
         )}
 
-        {/* Reservas */}
+        {/* RESERVAS */}
         {currentPath === '/admin/reservas' && (
-          <ReservationsPage onNavigate={setCurrentPath} />
+          <ReservationsPage
+            onNavigate={navigate}
+          />
         )}
 
-        {/* Quadras */}
+        {/* QUADRAS */}
         {currentPath === '/admin/quadras' && (
-          <CourtsPage onNavigate={setCurrentPath} />
+          <CourtsPage
+            onNavigate={navigate}
+          />
         )}
 
-        {/* Modalidades */}
+        {/* MODALIDADES */}
         {currentPath === '/admin/modalidades' && (
-          <ModalitiesPage onNavigate={setCurrentPath} />
+          <ModalitiesPage
+            onNavigate={navigate}
+          />
         )}
 
-        {/* Clientes */}
+        {/* CLIENTES */}
         {currentPath === '/admin/clientes' && (
-          <CustomersPage onNavigate={setCurrentPath} />
+          <CustomersPage
+            onNavigate={navigate}
+          />
         )}
 
-        {/* Serviços */}
+        {/* SERVIÇOS */}
         {currentPath === '/admin/servicos' && (
-          <ServicesPage onNavigate={setCurrentPath} />
+          <ServicesPage
+            onNavigate={navigate}
+          />
         )}
 
-        {/* Financeiro */}
+        {/* FINANCEIRO */}
         {currentPath === '/admin/financeiro' && (
-          <FinancePage onNavigate={setCurrentPath} />
+          <FinancePage
+            onNavigate={navigate}
+          />
         )}
 
-        {/* Configurações */}
+        {/* CONFIGURAÇÕES */}
         {currentPath === '/admin/configuracoes' && (
-          <SettingsPage onNavigate={setCurrentPath} />
+          <SettingsPage
+            onNavigate={navigate}
+          />
         )}
 
-        {/* Usuários */}
+        {/* USUÁRIOS */}
         {currentPath === '/admin/usuarios' && (
-          <UsersPage onNavigate={setCurrentPath} />
+          <UsersPage
+            onNavigate={navigate}
+          />
         )}
 
       </AdminLayout>
     );
   }
 
-  // ============================================================
-  // ÁREA DO CLIENTE
-  // /app/*
-  // ============================================================
+  /*
+   * ============================================================
+   * ÁREA DO CLIENTE
+   * ============================================================
+   */
   return (
     <ClientLayout
       currentPath={currentPath}
-      onNavigate={setCurrentPath}
+      onNavigate={navigate}
     >
 
-      {/* Início */}
       {(currentPath === '/app' ||
         currentPath === '/app/inicio') && (
         <ClientHomePage
-          onNavigate={setCurrentPath}
+          onNavigate={navigate}
         />
       )}
 
-      {/* Reservar */}
       {currentPath.startsWith('/app/reservar') && (
         <ClientBookingPage
-          onNavigate={setCurrentPath}
+          onNavigate={navigate}
         />
       )}
 
-      {/* Minhas reservas */}
       {(currentPath === '/app/minhas-reservas' ||
         currentPath === '/app/reservas') && (
         <ClientMyReservationsPage
-          onNavigate={setCurrentPath}
+          onNavigate={navigate}
         />
       )}
 
-      {/* Perfil */}
       {currentPath === '/app/perfil' && (
         <ClientProfilePage
-          onNavigate={setCurrentPath}
+          onNavigate={navigate}
         />
       )}
 

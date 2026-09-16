@@ -1,16 +1,20 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, {
+  useEffect,
+  useState,
+} from 'react';
+
 import { useAuth } from '../../contexts/AuthContext';
 import { arenaService } from '../../services/arena.service';
+
 import { DiagnosticTestsModal } from '../../components/DiagnosticTestsModal';
-import { 
-  DashboardAnalytics, 
-  PeriodFilter, 
-  Reservation, 
-  Court, 
-  Customer, 
-  Modality, 
-  CourtBlock 
+
+import {
+  DashboardAnalytics,
+  PeriodFilter,
+  Reservation,
+  Court,
 } from '../../types';
+
 import {
   TrendingUp,
   Calendar,
@@ -35,943 +39,2298 @@ import {
   Ban,
   Check,
   Shield,
-  HelpCircle
 } from 'lucide-react';
 
+import {
+  addCalendarDays,
+  buildArenaDateTime,
+  getTodayArenaDate,
+} from '../../utils/agendaDate';
+
 interface DashboardPageProps {
-  onNavigate: (path: string) => void;
+  onNavigate: (
+    path: string
+  ) => void;
 }
 
-export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
-  const { activeArena } = useAuth();
-  const [period, setPeriod] = useState<PeriodFilter>('TODAY');
-  const [customStart, setCustomStart] = useState('');
-  const [customEnd, setCustomEnd] = useState('');
-  const [analytics, setAnalytics] = useState<DashboardAnalytics | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+export const DashboardPage: React.FC<
+  DashboardPageProps
+> = ({
+  onNavigate,
+}) => {
 
-  // Quick Action Modal States
-  const [showNewClientModal, setShowNewClientModal] = useState(false);
-  const [showBlockModal, setShowBlockModal] = useState(false);
-  const [showTestsModal, setShowTestsModal] = useState(false);
-  const [courts, setCourts] = useState<Court[]>([]);
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const {
+    activeArena,
+  } = useAuth();
 
-  // Form states for modals
-  const [clientForm, setClientForm] = useState({ fullName: '', phone: '', email: '', notes: '' });
-  const [blockForm, setBlockForm] = useState({
-    courtId: '',
-    date: new Date().toISOString().split('T')[0],
-    startHour: '14:00',
-    endHour: '16:00',
-    reason: 'Manutenção / Nivelamento',
-    notes: '',
-  });
+  // ==========================================================
+  // ANALYTICS
+  // ==========================================================
 
-  const loadData = async (isRefresh = false) => {
-    if (!activeArena) return;
-    if (isRefresh) setRefreshing(true);
-    else setLoading(true);
+  const [
+    period,
+    setPeriod,
+  ] =
+    useState<PeriodFilter>(
+      'TODAY'
+    );
+
+  const [
+    customStart,
+    setCustomStart,
+  ] =
+    useState<string>('');
+
+  const [
+    customEnd,
+    setCustomEnd,
+  ] =
+    useState<string>('');
+
+  const [
+    analytics,
+    setAnalytics,
+  ] =
+    useState<DashboardAnalytics | null>(
+      null
+    );
+
+  const [
+    loading,
+    setLoading,
+  ] =
+    useState<boolean>(
+      true
+    );
+
+  const [
+    refreshing,
+    setRefreshing,
+  ] =
+    useState<boolean>(
+      false
+    );
+
+  // ==========================================================
+  // MODALS
+  // ==========================================================
+
+  const [
+    showNewClientModal,
+    setShowNewClientModal,
+  ] =
+    useState<boolean>(
+      false
+    );
+
+  const [
+    showBlockModal,
+    setShowBlockModal,
+  ] =
+    useState<boolean>(
+      false
+    );
+
+  const [
+    showTestsModal,
+    setShowTestsModal,
+  ] =
+    useState<boolean>(
+      false
+    );
+
+  // ==========================================================
+  // COURTS
+  // ==========================================================
+
+  const [
+    courts,
+    setCourts,
+  ] =
+    useState<Court[]>([]);
+
+  // ==========================================================
+  // FEEDBACK
+  // ==========================================================
+
+  const [
+    feedback,
+    setFeedback,
+  ] =
+    useState<{
+      type:
+        | 'success'
+        | 'error';
+      message: string;
+    } | null>(
+      null
+    );
+
+  // ==========================================================
+  // CLIENT FORM
+  // ==========================================================
+
+  const [
+    clientForm,
+    setClientForm,
+  ] =
+    useState({
+      fullName: '',
+      phone: '',
+      email: '',
+      notes: '',
+    });
+
+  // ==========================================================
+  // BLOCK FORM
+  // ==========================================================
+
+  const [
+    blockForm,
+    setBlockForm,
+  ] =
+    useState({
+      courtId: '',
+      date:
+        getTodayArenaDate(),
+      startHour:
+        '14:00',
+      endHour:
+        '16:00',
+      reason:
+        'Manutenção / Nivelamento',
+      notes: '',
+    });
+
+  // ==========================================================
+  // LOAD DATA
+  // ==========================================================
+
+  const loadData = async (
+    isRefresh = false
+  ) => {
+
+    if (!activeArena) {
+      setLoading(false);
+      return;
+    }
+
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
 
     try {
-      const [data, crts] = await Promise.all([
-        arenaService.getDashboardAnalytics(activeArena.id, period, customStart, customEnd),
-        arenaService.getCourts(activeArena.id),
-      ]);
-      setAnalytics(data);
-      setCourts(crts.filter(c => c.status === 'ACTIVE'));
-      if (crts.length > 0 && !blockForm.courtId) {
-        setBlockForm(prev => ({ ...prev, courtId: crts[0].id }));
+
+      const [
+        data,
+        crts,
+      ] =
+        await Promise.all([
+          arenaService.getDashboardAnalytics(
+            activeArena.id,
+            period,
+            customStart,
+            customEnd
+          ),
+
+          arenaService.getCourts(
+            activeArena.id
+          ),
+        ]);
+
+      setAnalytics(
+        data
+      );
+
+      const activeCourts =
+        crts.filter(
+          (court) =>
+            court.status ===
+            'ACTIVE'
+        );
+
+      setCourts(
+        activeCourts
+      );
+
+      if (
+        activeCourts.length >
+          0 &&
+        !blockForm.courtId
+      ) {
+
+        setBlockForm(
+          (current) => ({
+            ...current,
+            courtId:
+              activeCourts[0]
+                .id,
+          })
+        );
+
       }
-    } catch (err: any) {
-      console.error('Error loading dashboard:', err);
+
+    } catch (
+      error: any
+    ) {
+
+      console.error(
+        'Erro ao carregar Dashboard:',
+        error
+      );
+
+      setFeedback({
+        type:
+          'error',
+        message:
+          error?.message ||
+          'Erro ao carregar os indicadores.',
+      });
+
     } finally {
+
       setLoading(false);
       setRefreshing(false);
+
     }
   };
 
   useEffect(() => {
+
     loadData();
-  }, [activeArena, period, customStart, customEnd]);
 
-  // Handle Mark as Paid quick action
-  const handleMarkAsPaid = async (reservation: Reservation) => {
-    if (!activeArena) return;
-    try {
-      await arenaService.updateReservation(
-        reservation.id,
-        { payment_status: 'PAID' },
-        activeArena.id
-      );
-      setFeedback({ type: 'success', message: `Reserva de ${reservation.customer?.full_name || 'Cliente'} marcada como PAGA com sucesso.` });
-      await loadData(true);
-    } catch (err: any) {
-      setFeedback({ type: 'error', message: err?.message || 'Erro ao atualizar pagamento.' });
-    }
-  };
+  }, [
+    activeArena,
+    period,
+    customStart,
+    customEnd,
+  ]);
 
-  // Handle Create Quick Client
-  const handleCreateCustomer = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeArena || !clientForm.fullName || !clientForm.phone) {
-      setFeedback({ type: 'error', message: 'Preencha o nome e telefone do cliente.' });
-      return;
-    }
+  // ==========================================================
+  // MARK AS PAID
+  // ==========================================================
 
-    try {
-      await arenaService.createCustomer({
-        arena_id: activeArena.id,
-        user_id: null,
-        full_name: clientForm.fullName,
-        phone: clientForm.phone,
-        email: clientForm.email || null,
-        notes: clientForm.notes || null,
-        status: 'ACTIVE',
-      });
-      setFeedback({ type: 'success', message: `Cliente ${clientForm.fullName} cadastrado com sucesso!` });
-      setShowNewClientModal(false);
-      setClientForm({ fullName: '', phone: '', email: '', notes: '' });
-      await loadData(true);
-    } catch (err: any) {
-      setFeedback({ type: 'error', message: err?.message || 'Erro ao cadastrar cliente.' });
-    }
-  };
+  const handleMarkAsPaid =
+    async (
+      reservation: Reservation
+    ) => {
 
-  // Handle Create Court Block
-  const handleCreateCourtBlock = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeArena || !blockForm.courtId || !blockForm.date) {
-      setFeedback({ type: 'error', message: 'Preencha todos os campos do bloqueio.' });
-      return;
-    }
+      if (!activeArena) {
+        return;
+      }
 
-    const startAt = `${blockForm.date}T${blockForm.startHour}:00.000Z`;
-    const endAt = `${blockForm.date}T${blockForm.endHour}:00.000Z`;
+      try {
 
-    try {
-      await arenaService.createCourtBlock({
-        arena_id: activeArena.id,
-        court_id: blockForm.courtId,
-        start_at: startAt,
-        end_at: endAt,
-        reason: blockForm.reason,
-        notes: blockForm.notes || null,
-      });
-      setFeedback({ type: 'success', message: 'Bloqueio de quadra registrado com sucesso!' });
-      setShowBlockModal(false);
-      await loadData(true);
-    } catch (err: any) {
-      setFeedback({ type: 'error', message: err?.message || 'Erro ao criar bloqueio.' });
-    }
-  };
+        await arenaService.updateReservation(
+          reservation.id,
+          {
+            payment_status:
+              'PAID',
+          },
+          activeArena.id
+        );
+
+        setFeedback({
+          type:
+            'success',
+          message:
+            `Reserva de ${
+              reservation
+                .customer
+                ?.full_name ||
+              'Cliente'
+            } marcada como paga.`,
+        });
+
+        await loadData(
+          true
+        );
+
+      } catch (
+        error: any
+      ) {
+
+        setFeedback({
+          type:
+            'error',
+          message:
+            error?.message ||
+            'Erro ao atualizar pagamento.',
+        });
+
+      }
+    };
+
+  // ==========================================================
+  // CREATE CUSTOMER
+  // ==========================================================
+
+  const handleCreateCustomer =
+    async (
+      event: React.FormEvent
+    ) => {
+
+      event.preventDefault();
+
+      if (
+        !activeArena ||
+        !clientForm.fullName.trim() ||
+        !clientForm.phone.trim()
+      ) {
+
+        setFeedback({
+          type:
+            'error',
+          message:
+            'Preencha o nome e telefone do cliente.',
+        });
+
+        return;
+      }
+
+      try {
+
+        await arenaService.createCustomer({
+          arena_id:
+            activeArena.id,
+
+          user_id:
+            null,
+
+          full_name:
+            clientForm.fullName.trim(),
+
+          phone:
+            clientForm.phone.trim(),
+
+          email:
+            clientForm.email.trim() ||
+            null,
+
+          notes:
+            clientForm.notes.trim() ||
+            null,
+
+          status:
+            'ACTIVE',
+        });
+
+        setFeedback({
+          type:
+            'success',
+          message:
+            `Cliente ${clientForm.fullName} cadastrado com sucesso!`,
+        });
+
+        setShowNewClientModal(
+          false
+        );
+
+        setClientForm({
+          fullName: '',
+          phone: '',
+          email: '',
+          notes: '',
+        });
+
+        await loadData(
+          true
+        );
+
+      } catch (
+        error: any
+      ) {
+
+        setFeedback({
+          type:
+            'error',
+          message:
+            error?.message ||
+            'Erro ao cadastrar cliente.',
+        });
+
+      }
+    };
+
+  // ==========================================================
+  // CREATE COURT BLOCK
+  // ==========================================================
+
+  const handleCreateCourtBlock =
+    async (
+      event: React.FormEvent
+    ) => {
+
+      event.preventDefault();
+
+      if (
+        !activeArena ||
+        !blockForm.courtId ||
+        !blockForm.date ||
+        !blockForm.startHour ||
+        !blockForm.endHour
+      ) {
+
+        setFeedback({
+          type:
+            'error',
+          message:
+            'Preencha todos os campos do bloqueio.',
+        });
+
+        return;
+      }
+
+      const [
+        startHour,
+        startMinute,
+      ] =
+        blockForm.startHour
+          .split(':')
+          .map(Number);
+
+      const [
+        endHour,
+        endMinute,
+      ] =
+        blockForm.endHour
+          .split(':')
+          .map(Number);
+
+      const startMinutes =
+        startHour * 60 +
+        startMinute;
+
+      const endMinutes =
+        endHour * 60 +
+        endMinute;
+
+      if (
+        endMinutes ===
+        startMinutes
+      ) {
+
+        setFeedback({
+          type:
+            'error',
+          message:
+            'O horário de término deve ser diferente do início.',
+        });
+
+        return;
+      }
+
+      /*
+       * Permite bloqueio:
+       *
+       * 23:00 -> 00:00
+       *
+       * com término no dia seguinte.
+       */
+
+      const endDate =
+        endMinutes <=
+          startMinutes
+          ? addCalendarDays(
+              blockForm.date,
+              1
+            )
+          : blockForm.date;
+
+      const startAt =
+        buildArenaDateTime(
+          blockForm.date,
+          blockForm.startHour
+        );
+
+      const endAt =
+        buildArenaDateTime(
+          endDate,
+          blockForm.endHour
+        );
+
+      try {
+
+        await arenaService.createCourtBlock({
+          arena_id:
+            activeArena.id,
+
+          court_id:
+            blockForm.courtId,
+
+          start_at:
+            startAt,
+
+          end_at:
+            endAt,
+
+          reason:
+            blockForm.reason.trim() ||
+            'Bloqueio operacional',
+
+          notes:
+            blockForm.notes.trim() ||
+            null,
+        });
+
+        setFeedback({
+          type:
+            'success',
+          message:
+            'Bloqueio de quadra registrado com sucesso!',
+        });
+
+        setShowBlockModal(
+          false
+        );
+
+        setBlockForm(
+          (current) => ({
+            ...current,
+            date:
+              getTodayArenaDate(),
+            startHour:
+              '14:00',
+            endHour:
+              '16:00',
+            reason:
+              'Manutenção / Nivelamento',
+            notes: '',
+          })
+        );
+
+        await loadData(
+          true
+        );
+
+      } catch (
+        error: any
+      ) {
+
+        setFeedback({
+          type:
+            'error',
+          message:
+            error?.message ||
+            'Erro ao criar bloqueio.',
+        });
+
+      }
+    };
+
+  // ==========================================================
+  // NO ARENA
+  // ==========================================================
+
+  if (!activeArena) {
+
+    return (
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center">
+
+        <h2 className="text-base font-bold text-white">
+          Nenhuma arena selecionada
+        </h2>
+
+        <p className="text-sm text-slate-400 mt-2">
+          Selecione uma arena para visualizar os indicadores.
+        </p>
+
+      </div>
+    );
+  }
+
+  // ==========================================================
+  // RENDER
+  // ==========================================================
 
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
-      {/* Toast Feedback */}
+
+      {/* ======================================================
+          FEEDBACK
+      ====================================================== */}
+
       {feedback && (
-        <div className={`p-4 rounded-2xl border flex items-center justify-between text-xs font-semibold shadow-lg transition animate-fadeIn ${
-          feedback.type === 'success' 
-            ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-300' 
-            : 'bg-rose-950/80 border-rose-500/40 text-rose-300'
-        }`}>
+
+        <div
+          className={`p-4 rounded-2xl border flex items-center justify-between text-xs font-semibold shadow-lg ${
+            feedback.type ===
+            'success'
+              ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-300'
+              : 'bg-rose-950/80 border-rose-500/40 text-rose-300'
+          }`}
+        >
+
           <div className="flex items-center gap-2">
-            {feedback.type === 'success' ? <Check className="w-4 h-4 text-emerald-400" /> : <AlertTriangle className="w-4 h-4 text-rose-400" />}
-            <span>{feedback.message}</span>
+
+            {feedback.type ===
+            'success' ? (
+              <Check className="w-4 h-4" />
+            ) : (
+              <AlertTriangle className="w-4 h-4" />
+            )}
+
+            <span>
+              {feedback.message}
+            </span>
+
           </div>
-          <button 
-            onClick={() => setFeedback(null)} 
+
+          <button
+            type="button"
+            onClick={() =>
+              setFeedback(
+                null
+              )
+            }
             className="text-slate-400 hover:text-white p-1 cursor-pointer"
           >
-            &times;
+            ×
           </button>
+
         </div>
+
       )}
 
-      {/* Header Banner & Period Controls */}
-      <div className="bg-slate-900/95 border border-slate-800 rounded-3xl p-5 md:p-6 shadow-xl relative overflow-hidden flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5">
-        <div className="space-y-1.5 z-10">
+      {/* ======================================================
+          HEADER
+      ====================================================== */}
+
+      <div className="bg-slate-900/95 border border-slate-800 rounded-3xl p-5 md:p-6 shadow-xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5">
+
+        <div className="space-y-1.5">
+
           <div className="flex flex-wrap items-center gap-2">
+
             <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
+
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+
               Operação Ao Vivo
+
             </span>
+
             <span className="text-xs text-slate-400">
-              Horário: <strong className="text-slate-200">{activeArena?.opening_time} às {activeArena?.closing_time}</strong>
+              Horário:{' '}
+              <strong className="text-slate-200">
+                {activeArena.opening_time ||
+                  '06:00'}
+                {' às '}
+                {activeArena.closing_time ||
+                  '23:00'}
+              </strong>
             </span>
-            <span className="text-xs text-slate-400">• Timezone: <strong className="text-slate-200">{activeArena?.timezone || 'America/Sao_Paulo'}</strong></span>
+
+            <span className="text-xs text-slate-400">
+              • Timezone:{' '}
+              <strong className="text-slate-200">
+                {activeArena.timezone ||
+                  'America/Sao_Paulo'}
+              </strong>
+            </span>
+
           </div>
+
           <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight">
-            {activeArena?.name}
+            {activeArena.name}
           </h1>
+
           <p className="text-xs md:text-sm text-slate-400">
             Inteligência operacional em tempo real: ocupação, faturamento e demanda.
           </p>
+
         </div>
 
-        {/* Period Selector Tabs */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 z-10 w-full lg:w-auto">
-          <div className="bg-slate-950/80 p-1 rounded-2xl border border-slate-800 flex items-center gap-1 w-full sm:w-auto overflow-x-auto">
+        {/* PERÍODOS */}
+
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full lg:w-auto">
+
+          <div className="bg-slate-950/80 p-1 rounded-2xl border border-slate-800 flex items-center gap-1 overflow-x-auto">
+
             <button
-              id="dash-period-today"
-              onClick={() => setPeriod('TODAY')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
-                period === 'TODAY'
-                  ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+              type="button"
+              onClick={() =>
+                setPeriod(
+                  'TODAY'
+                )
+              }
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer ${
+                period ===
+                'TODAY'
+                  ? 'bg-emerald-500 text-slate-950'
+                  : 'text-slate-400 hover:text-white'
               }`}
             >
               Hoje
             </button>
+
             <button
-              id="dash-period-7days"
-              onClick={() => setPeriod('7_DAYS')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
-                period === '7_DAYS'
-                  ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+              type="button"
+              onClick={() =>
+                setPeriod(
+                  '7_DAYS'
+                )
+              }
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer ${
+                period ===
+                '7_DAYS'
+                  ? 'bg-emerald-500 text-slate-950'
+                  : 'text-slate-400 hover:text-white'
               }`}
             >
               7 dias
             </button>
+
             <button
-              id="dash-period-30days"
-              onClick={() => setPeriod('30_DAYS')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
-                period === '30_DAYS'
-                  ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+              type="button"
+              onClick={() =>
+                setPeriod(
+                  '30_DAYS'
+                )
+              }
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer ${
+                period ===
+                '30_DAYS'
+                  ? 'bg-emerald-500 text-slate-950'
+                  : 'text-slate-400 hover:text-white'
               }`}
             >
               30 dias
             </button>
+
             <button
-              id="dash-period-custom"
-              onClick={() => setPeriod('CUSTOM')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
-                period === 'CUSTOM'
-                  ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+              type="button"
+              onClick={() =>
+                setPeriod(
+                  'CUSTOM'
+                )
+              }
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer ${
+                period ===
+                'CUSTOM'
+                  ? 'bg-emerald-500 text-slate-950'
+                  : 'text-slate-400 hover:text-white'
               }`}
             >
               Personalizado
             </button>
+
           </div>
 
           <button
-            onClick={() => setShowTestsModal(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-slate-800/90 hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-300 border border-slate-700 text-xs font-bold transition cursor-pointer"
-            title="Executar Auditoria de 11 Testes de Integridade"
+            type="button"
+            onClick={() =>
+              setShowTestsModal(
+                true
+              )
+            }
+            className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-slate-800 hover:bg-emerald-500/20 text-slate-300 border border-slate-700 text-xs font-bold transition cursor-pointer"
           >
             <Shield className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="hidden sm:inline">Auditar Sistema (11 Testes)</span>
-            <span className="sm:hidden">11 Testes</span>
+
+            <span>
+              Auditar Sistema
+            </span>
           </button>
 
           <button
-            onClick={() => loadData(true)}
-            disabled={refreshing}
-            className="p-2.5 rounded-2xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 transition cursor-pointer border border-slate-700"
-            title="Recarregar Indicadores"
+            type="button"
+            onClick={() =>
+              loadData(true)
+            }
+            disabled={
+              refreshing
+            }
+            className="p-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 cursor-pointer"
+            title="Atualizar"
           >
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-emerald-400' : ''}`} />
+            <RefreshCw
+              className={`w-4 h-4 ${
+                refreshing
+                  ? 'animate-spin text-emerald-400'
+                  : ''
+              }`}
+            />
           </button>
+
         </div>
+
       </div>
 
-      {/* Custom Date Range Picker */}
-      {period === 'CUSTOM' && (
-        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center gap-3 animate-fadeIn">
+      {/* ======================================================
+          CUSTOM RANGE
+      ====================================================== */}
+
+      {period ===
+        'CUSTOM' && (
+
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center gap-3">
+
           <div className="flex items-center gap-2 text-xs text-slate-300">
+
             <Filter className="w-4 h-4 text-emerald-400" />
-            <span>Filtrar período customizado:</span>
+
+            <span>
+              Filtrar período:
+            </span>
+
           </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="date"
-              value={customStart}
-              onChange={(e) => setCustomStart(e.target.value)}
-              className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-            />
-            <span className="text-xs text-slate-500">até</span>
-            <input
-              type="date"
-              value={customEnd}
-              onChange={(e) => setCustomEnd(e.target.value)}
-              className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-            />
-          </div>
+
+          <input
+            type="date"
+            value={
+              customStart
+            }
+            onChange={(event) =>
+              setCustomStart(
+                event.target.value
+              )
+            }
+            className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          />
+
+          <span className="text-xs text-slate-500">
+            até
+          </span>
+
+          <input
+            type="date"
+            value={
+              customEnd
+            }
+            onChange={(event) =>
+              setCustomEnd(
+                event.target.value
+              )
+            }
+            className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          />
+
         </div>
+
       )}
 
-      {/* Section: Quick Actions Bar */}
+      {/* ======================================================
+          QUICK ACTIONS
+      ====================================================== */}
+
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+
         <button
-          id="dash-btn-new-reservation"
-          onClick={() => onNavigate('/admin/agenda')}
-          className="flex items-center justify-center gap-2 p-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/10 transition cursor-pointer"
+          type="button"
+          onClick={() =>
+            onNavigate(
+              '/admin/agenda'
+            )
+          }
+          className="flex items-center justify-center gap-2 p-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg transition cursor-pointer"
         >
           <Plus className="w-4 h-4" />
-          <span>NOVA RESERVA</span>
+
+          NOVA RESERVA
         </button>
 
         <button
-          id="dash-btn-new-customer"
-          onClick={() => setShowNewClientModal(true)}
-          className="flex items-center justify-center gap-2 p-3.5 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 font-bold text-xs shadow-lg transition cursor-pointer"
+          type="button"
+          onClick={() =>
+            setShowNewClientModal(
+              true
+            )
+          }
+          className="flex items-center justify-center gap-2 p-3.5 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 font-bold text-xs cursor-pointer"
         >
           <UserPlus className="w-4 h-4 text-purple-400" />
-          <span>NOVO CLIENTE</span>
+
+          NOVO CLIENTE
         </button>
 
         <button
-          id="dash-btn-block-court"
-          onClick={() => setShowBlockModal(true)}
-          className="flex items-center justify-center gap-2 p-3.5 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 font-bold text-xs shadow-lg transition cursor-pointer"
+          type="button"
+          onClick={() =>
+            setShowBlockModal(
+              true
+            )
+          }
+          className="flex items-center justify-center gap-2 p-3.5 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 font-bold text-xs cursor-pointer"
         >
           <Ban className="w-4 h-4 text-amber-400" />
-          <span>BLOQUEAR QUADRA</span>
+
+          BLOQUEAR QUADRA
         </button>
 
         <button
-          id="dash-btn-view-agenda"
-          onClick={() => onNavigate('/admin/agenda')}
-          className="flex items-center justify-center gap-2 p-3.5 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 font-bold text-xs shadow-lg transition cursor-pointer"
+          type="button"
+          onClick={() =>
+            onNavigate(
+              '/admin/agenda'
+            )
+          }
+          className="flex items-center justify-center gap-2 p-3.5 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 font-bold text-xs cursor-pointer"
         >
           <Calendar className="w-4 h-4 text-blue-400" />
-          <span>VER AGENDA</span>
+
+          VER AGENDA
         </button>
+
       </div>
 
-      {/* SECTION 1: TODAY'S HIGHLIGHTS ("Como está minha arena hoje?") */}
+      {/* ======================================================
+          INDICADORES DE HOJE
+      ====================================================== */}
+
       <div className="space-y-3">
+
         <div className="flex items-center justify-between">
+
           <div className="flex items-center gap-2">
+
             <Activity className="w-4 h-4 text-emerald-400" />
-            <h2 className="text-base font-bold text-white tracking-tight">Indicadores de Hoje</h2>
+
+            <h2 className="text-base font-bold text-white">
+              Indicadores de Hoje
+            </h2>
+
           </div>
-          <span className="text-xs text-slate-400">Dados consolidados do dia atual</span>
+
+          <span className="text-xs text-slate-400">
+            Dados consolidados do dia atual
+          </span>
+
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          {/* Card 1: Reservas Hoje */}
-          <div className="bg-slate-900/90 border border-slate-800/90 rounded-2xl p-4 md:p-5 shadow-lg relative overflow-hidden">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+
+          {/* RESERVAS */}
+
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-400">Reservas Hoje</span>
-              <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
+
+              <span className="text-xs font-semibold text-slate-400">
+                Reservas Hoje
+              </span>
+
+              <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400">
                 <Calendar className="w-4 h-4" />
               </div>
+
             </div>
-            <div className="mt-3">
-              <span className="text-2xl md:text-3xl font-black text-white">
-                {analytics?.todayReservationsCount ?? 0}
-              </span>
+
+            <div className="mt-3 text-2xl font-black text-white">
+              {analytics?.todayReservationsCount ??
+                0}
             </div>
+
             <p className="mt-1 text-[11px] text-slate-400">
-              Agendamentos para a data atual
+              Agendamentos
             </p>
+
           </div>
 
-          {/* Card 2: Faturamento Hoje */}
-          <div className="bg-slate-900/90 border border-slate-800/90 rounded-2xl p-4 md:p-5 shadow-lg relative overflow-hidden">
+          {/* FATURAMENTO */}
+
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-400">Faturamento Hoje</span>
-              <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+
+              <span className="text-xs font-semibold text-slate-400">
+                Faturamento Hoje
+              </span>
+
+              <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
                 <DollarSign className="w-4 h-4" />
               </div>
+
             </div>
-            <div className="mt-3">
-              <span className="text-2xl md:text-3xl font-black text-emerald-400">
-                R$ {(analytics?.todayRevenue ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
+
+            <div className="mt-3 text-2xl font-black text-emerald-400">
+              R${' '}
+              {(
+                analytics?.todayRevenue ??
+                0
+              ).toLocaleString(
+                'pt-BR',
+                {
+                  minimumFractionDigits: 2,
+                }
+              )}
             </div>
+
             <p className="mt-1 text-[11px] text-slate-400">
-              Somatório de reservas válidas
+              Reservas não canceladas
             </p>
+
           </div>
 
-          {/* Card 3: Ocupação Hoje */}
-          <div className="bg-slate-900/90 border border-slate-800/90 rounded-2xl p-4 md:p-5 shadow-lg relative overflow-hidden">
+          {/* OCUPAÇÃO */}
+
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-400">Ocupação Hoje</span>
-              <div className="p-2 rounded-xl bg-teal-500/10 text-teal-400 border border-teal-500/20">
+
+              <span className="text-xs font-semibold text-slate-400">
+                Ocupação Hoje
+              </span>
+
+              <div className="p-2 rounded-xl bg-teal-500/10 text-teal-400">
                 <Percent className="w-4 h-4" />
               </div>
+
             </div>
-            <div className="mt-3">
-              <span className="text-2xl md:text-3xl font-black text-white">
-                {analytics?.todayOccupancyPercent ?? 0}%
-              </span>
+
+            <div className="mt-3 text-2xl font-black text-teal-400">
+              {analytics?.todayOccupancyPercent ??
+                0}
+              %
             </div>
-            <div className="mt-2 w-full bg-slate-950 rounded-full h-1.5 overflow-hidden">
-              <div
-                className="bg-teal-400 h-full rounded-full transition-all duration-500"
-                style={{ width: `${analytics?.todayOccupancyPercent ?? 0}%` }}
-              />
-            </div>
+
+            <p className="mt-1 text-[11px] text-slate-400">
+              Capacidade operacional
+            </p>
+
           </div>
 
-          {/* Card 4: Cancelamentos Hoje */}
-          <div className="bg-slate-900/90 border border-slate-800/90 rounded-2xl p-4 md:p-5 shadow-lg relative overflow-hidden">
+          {/* CANCELAMENTOS */}
+
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-400">Cancelamentos Hoje</span>
-              <div className="p-2 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20">
+
+              <span className="text-xs font-semibold text-slate-400">
+                Cancelamentos
+              </span>
+
+              <div className="p-2 rounded-xl bg-rose-500/10 text-rose-400">
                 <XCircle className="w-4 h-4" />
               </div>
+
             </div>
-            <div className="mt-3">
-              <span className={`text-2xl md:text-3xl font-black ${
-                (analytics?.todayCancellationsCount ?? 0) > 0 ? 'text-rose-400' : 'text-white'
-              }`}>
-                {analytics?.todayCancellationsCount ?? 0}
-              </span>
+
+            <div className="mt-3 text-2xl font-black text-rose-400">
+              {analytics?.todayCancellationsCount ??
+                0}
             </div>
+
             <p className="mt-1 text-[11px] text-slate-400">
-              {analytics?.todayCancellationsCount === 0 ? 'Nenhum cancelamento hoje' : 'Cancelamentos registrados'}
+              No dia atual
             </p>
+
           </div>
+
         </div>
+
       </div>
 
-      {/* SECTION 2: PERIOD INDICATORS */}
+      {/* ======================================================
+          INDICADORES DO PERÍODO
+      ====================================================== */}
+
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-emerald-400" />
-            <h2 className="text-base font-bold text-white tracking-tight">
-              Indicadores do Período ({period === 'TODAY' ? 'Hoje' : period === '7_DAYS' ? 'Últimos 7 dias' : period === '30_DAYS' ? 'Últimos 30 dias' : 'Personalizado'})
-            </h2>
-          </div>
-          <span className="text-xs text-slate-400">
-            {analytics?.startDate} até {analytics?.endDate}
-          </span>
+
+        <div className="flex items-center gap-2">
+
+          <TrendingUp className="w-4 h-4 text-emerald-400" />
+
+          <h2 className="text-base font-bold text-white">
+            Indicadores do Período
+          </h2>
+
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
-          {/* Total de Reservas */}
-          <div className="bg-slate-900/90 border border-slate-800/90 rounded-2xl p-4 shadow-lg">
-            <span className="text-xs font-semibold text-slate-400">Total de Reservas</span>
-            <div className="mt-2 text-xl font-bold text-white">
-              {analytics?.periodReservationsCount ?? 0}
-            </div>
-            <span className="text-[11px] text-slate-400 mt-1 block">
-              {analytics?.periodValidReservationsCount ?? 0} válidas
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+
+            <span className="text-xs text-slate-400">
+              Reservas
             </span>
+
+            <div className="mt-2 text-xl font-black text-white">
+              {analytics?.periodReservationsCount ??
+                0}
+            </div>
+
+            <span className="text-[11px] text-slate-500">
+              {analytics?.periodValidReservationsCount ??
+                0}{' '}
+              válidas
+            </span>
+
           </div>
 
-          {/* Faturamento do Período */}
-          <div className="bg-slate-900/90 border border-slate-800/90 rounded-2xl p-4 shadow-lg">
-            <span className="text-xs font-semibold text-slate-400">Faturamento</span>
-            <div className="mt-2 text-xl font-bold text-emerald-400">
-              R$ {(analytics?.periodRevenue ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-            <span className="text-[11px] text-slate-400 mt-1 block">
-              Sem cancelamentos
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+
+            <span className="text-xs text-slate-400">
+              Faturamento
             </span>
+
+            <div className="mt-2 text-xl font-black text-emerald-400">
+              R${' '}
+              {(
+                analytics?.periodRevenue ??
+                0
+              ).toLocaleString(
+                'pt-BR',
+                {
+                  minimumFractionDigits: 2,
+                }
+              )}
+            </div>
+
           </div>
 
-          {/* Ticket Médio */}
-          <div className="bg-slate-900/90 border border-slate-800/90 rounded-2xl p-4 shadow-lg">
-            <span className="text-xs font-semibold text-slate-400">Ticket Médio</span>
-            <div className="mt-2 text-xl font-bold text-blue-400">
-              R$ {(analytics?.periodAverageTicket ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-            <span className="text-[11px] text-slate-400 mt-1 block">
-              por reserva válida
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+
+            <span className="text-xs text-slate-400">
+              Ticket Médio
             </span>
+
+            <div className="mt-2 text-xl font-black text-blue-400">
+              R${' '}
+              {(
+                analytics?.periodAverageTicket ??
+                0
+              ).toLocaleString(
+                'pt-BR',
+                {
+                  minimumFractionDigits: 2,
+                }
+              )}
+            </div>
+
           </div>
 
-          {/* Novos Clientes */}
-          <div className="bg-slate-900/90 border border-slate-800/90 rounded-2xl p-4 shadow-lg">
-            <span className="text-xs font-semibold text-slate-400">Novos Clientes</span>
-            <div className="mt-2 text-xl font-bold text-purple-400">
-              {analytics?.periodNewCustomersCount ?? 0}
-            </div>
-            <span className="text-[11px] text-slate-400 mt-1 block">
-              Cadastrados no período
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+
+            <span className="text-xs text-slate-400">
+              Clientes Recorrentes
             </span>
+
+            <div className="mt-2 text-xl font-black text-amber-400">
+              {analytics?.periodRecurringCustomersCount ??
+                0}
+            </div>
+
+            <span className="text-[11px] text-slate-500">
+              2+ reservas
+            </span>
+
           </div>
 
-          {/* Clientes Recorrentes */}
-          <div className="bg-slate-900/90 border border-slate-800/90 rounded-2xl p-4 shadow-lg col-span-2 sm:col-span-1">
-            <span className="text-xs font-semibold text-slate-400">Clientes Recorrentes</span>
-            <div className="mt-2 text-xl font-bold text-amber-400">
-              {analytics?.periodRecurringCustomersCount ?? 0}
-            </div>
-            <span className="text-[11px] text-slate-400 mt-1 block">
-              &ge; 2 reservas válidas
-            </span>
-          </div>
         </div>
+
       </div>
 
-      {/* SECTION 3: GRAPHS & BREAKDOWNS (Ocupação por Dia e Faturamento por Dia) */}
+      {/* ======================================================
+          GRÁFICOS
+      ====================================================== */}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Graph 1: Ocupação por Dia */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 md:p-6 shadow-xl space-y-4">
+
+        {/* OCUPAÇÃO */}
+
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl space-y-4">
+
           <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+
             <div>
+
               <div className="flex items-center gap-2">
+
                 <BarChart3 className="w-4 h-4 text-teal-400" />
-                <h3 className="text-sm font-bold text-slate-100">Taxa de Ocupação Diária</h3>
+
+                <h3 className="text-sm font-bold text-slate-100">
+                  Taxa de Ocupação Diária
+                </h3>
+
               </div>
+
               <p className="text-xs text-slate-400">
-                Horas reservadas vs. Horas operacionais disponíveis
+                Horas reservadas vs. horas disponíveis
               </p>
+
             </div>
-            <span className="text-xs font-extrabold text-teal-400 bg-teal-500/10 px-2.5 py-1 rounded-xl border border-teal-500/20">
-              Média: {analytics?.periodAverageOccupancy ?? 0}%
+
+            <span className="text-xs font-bold text-teal-400 bg-teal-500/10 px-2.5 py-1 rounded-xl">
+              Média:{' '}
+              {analytics?.periodAverageOccupancy ??
+                0}
+              %
             </span>
+
           </div>
 
-          {(!analytics?.dailyOccupancy || analytics.dailyOccupancy.length === 0) ? (
-            <div className="py-12 text-center text-slate-400 text-xs">
-              Ainda não existem reservas suficientes para gerar este indicador.
-            </div>
-          ) : (
-            <div className="space-y-3 pt-2">
-              {analytics.dailyOccupancy.map((day) => (
-                <div key={day.date} className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-300 w-24 truncate">{day.label}</span>
-                    <div className="flex items-center gap-2 text-slate-400">
-                      <span>{day.reservedHours.toFixed(1)}h / {day.availableHours.toFixed(1)}h</span>
-                      <span className="font-bold text-white w-10 text-right">{day.occupancyPercent}%</span>
-                    </div>
-                  </div>
-                  <div className="w-full bg-slate-950 rounded-full h-2.5 overflow-hidden p-0.5 border border-slate-800">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${
-                        day.occupancyPercent >= 80 
-                          ? 'bg-emerald-400' 
-                          : day.occupancyPercent >= 50 
-                          ? 'bg-teal-400' 
-                          : day.occupancyPercent > 0 
-                          ? 'bg-blue-400' 
-                          : 'bg-transparent'
-                      }`}
-                      style={{ width: `${Math.max(2, day.occupancyPercent)}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+          {analytics?.dailyOccupancy &&
+          analytics.dailyOccupancy.length >
+            0 ? (
 
-        {/* Graph 2: Faturamento por Dia */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 md:p-6 shadow-xl space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-            <div>
-              <div className="flex items-center gap-2">
-                <DollarSign className="w-4 h-4 text-emerald-400" />
-                <h3 className="text-sm font-bold text-slate-100">Faturamento por Dia</h3>
-              </div>
-              <p className="text-xs text-slate-400">
-                Receita bruta diária de reservas não canceladas
-              </p>
-            </div>
-            <span className="text-xs font-extrabold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-xl border border-emerald-500/20">
-              Total: R$ {(analytics?.periodRevenue ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-            </span>
-          </div>
+            <div className="space-y-3">
 
-          {(!analytics?.dailyRevenue || analytics.dailyRevenue.length === 0) ? (
-            <div className="py-12 text-center text-slate-400 text-xs">
-              Ainda não existem reservas suficientes para gerar este indicador.
-            </div>
-          ) : (
-            <div className="space-y-3 pt-2">
-              {analytics.dailyRevenue.map((day) => {
-                const maxRevenue = Math.max(1, ...(analytics.dailyRevenue.map(d => d.revenue)));
-                const pct = Math.round((day.revenue / maxRevenue) * 100);
-                return (
-                  <div key={day.date} className="space-y-1">
+              {analytics.dailyOccupancy.map(
+                (day) => (
+
+                  <div
+                    key={
+                      day.date
+                    }
+                    className="space-y-1"
+                  >
+
                     <div className="flex items-center justify-between text-xs">
-                      <span className="font-semibold text-slate-300 w-24 truncate">{day.label}</span>
+
+                      <span className="font-semibold text-slate-300">
+                        {day.label}
+                      </span>
+
                       <div className="flex items-center gap-2">
-                        <span className="text-slate-400">{day.reservationsCount} reservas</span>
-                        <span className="font-bold text-emerald-400 w-20 text-right">
-                          R$ {day.revenue.toFixed(2)}
+
+                        <span className="text-slate-400">
+                          {day.reservedHours.toFixed(
+                            1
+                          )}
+                          h /
+                          {day.availableHours.toFixed(
+                            1
+                          )}
+                          h
                         </span>
+
+                        <span className="font-bold text-white">
+                          {
+                            day.occupancyPercent
+                          }
+                          %
+                        </span>
+
                       </div>
+
                     </div>
-                    <div className="w-full bg-slate-950 rounded-full h-2.5 overflow-hidden p-0.5 border border-slate-800">
+
+                    <div className="w-full bg-slate-950 rounded-full h-2.5 overflow-hidden border border-slate-800">
+
                       <div
-                        className="h-full bg-emerald-400 rounded-full transition-all duration-500"
-                        style={{ width: `${Math.max(day.revenue > 0 ? 3 : 0, pct)}%` }}
+                        className={`h-full rounded-full ${
+                          day.occupancyPercent >=
+                          80
+                            ? 'bg-emerald-400'
+                            : day.occupancyPercent >=
+                              50
+                            ? 'bg-teal-400'
+                            : day.occupancyPercent >
+                              0
+                            ? 'bg-blue-400'
+                            : 'bg-transparent'
+                        }`}
+                        style={{
+                          width: `${Math.max(
+                            2,
+                            day.occupancyPercent
+                          )}%`,
+                        }}
                       />
+
                     </div>
+
                   </div>
-                );
-              })}
+
+                )
+              )}
+
             </div>
+
+          ) : (
+
+            <div className="py-12 text-center text-xs text-slate-400">
+              Ainda não existem dados suficientes.
+            </div>
+
           )}
+
         </div>
+
+        {/* FATURAMENTO */}
+
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl space-y-4">
+
+          <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+
+            <div>
+
+              <div className="flex items-center gap-2">
+
+                <DollarSign className="w-4 h-4 text-emerald-400" />
+
+                <h3 className="text-sm font-bold text-slate-100">
+                  Faturamento por Dia
+                </h3>
+
+              </div>
+
+              <p className="text-xs text-slate-400">
+                Receita de reservas não canceladas
+              </p>
+
+            </div>
+
+            <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-xl">
+              Total: R${' '}
+              {(
+                analytics?.periodRevenue ??
+                0
+              ).toLocaleString(
+                'pt-BR',
+                {
+                  minimumFractionDigits: 2,
+                }
+              )}
+            </span>
+
+          </div>
+
+          {analytics?.dailyRevenue &&
+          analytics.dailyRevenue.length >
+            0 ? (
+
+            <div className="space-y-3">
+
+              {analytics.dailyRevenue.map(
+                (day) => {
+
+                  const maxRevenue =
+                    Math.max(
+                      1,
+                      ...analytics.dailyRevenue.map(
+                        (item) =>
+                          item.revenue
+                      )
+                    );
+
+                  const percentage =
+                    Math.round(
+                      (day.revenue /
+                        maxRevenue) *
+                        100
+                    );
+
+                  return (
+
+                    <div
+                      key={
+                        day.date
+                      }
+                      className="space-y-1"
+                    >
+
+                      <div className="flex items-center justify-between text-xs">
+
+                        <span className="font-semibold text-slate-300">
+                          {day.label}
+                        </span>
+
+                        <div className="flex items-center gap-2">
+
+                          <span className="text-slate-400">
+                            {
+                              day.reservationsCount
+                            }{' '}
+                            reservas
+                          </span>
+
+                          <span className="font-bold text-emerald-400">
+                            R${' '}
+                            {day.revenue.toFixed(
+                              2
+                            )}
+                          </span>
+
+                        </div>
+
+                      </div>
+
+                      <div className="w-full bg-slate-950 rounded-full h-2.5 overflow-hidden border border-slate-800">
+
+                        <div
+                          className="h-full bg-emerald-400 rounded-full"
+                          style={{
+                            width: `${Math.max(
+                              day.revenue >
+                                0
+                                ? 3
+                                : 0,
+                              percentage
+                            )}%`,
+                          }}
+                        />
+
+                      </div>
+
+                    </div>
+
+                  );
+                }
+              )}
+
+            </div>
+
+          ) : (
+
+            <div className="py-12 text-center text-xs text-slate-400">
+              Ainda não existem dados suficientes.
+            </div>
+
+          )}
+
+        </div>
+
       </div>
 
-      {/* SECTION 4: RESERVAS DE HOJE & QUADRAS MAIS UTILIZADAS */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Reservas de Hoje (Lista Operacional) */}
-        <div className="lg:col-span-2 bg-slate-900/90 border border-slate-800 rounded-3xl p-5 md:p-6 shadow-xl space-y-4">
+      {/* ======================================================
+          QUADRAS / HORÁRIOS
+      ====================================================== */}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        {/* QUADRAS */}
+
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl">
+
           <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-            <div>
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-emerald-400" />
-                <h3 className="text-sm font-bold text-slate-100">Reservas de Hoje</h3>
-              </div>
-              <p className="text-xs text-slate-400">Lista cronológica operacional do dia</p>
+
+            <div className="flex items-center gap-2">
+
+              <Layers className="w-4 h-4 text-blue-400" />
+
+              <h3 className="text-sm font-bold text-white">
+                Utilização das Quadras
+              </h3>
+
             </div>
-            <button
-              onClick={() => onNavigate('/admin/reservas')}
-              className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer"
-            >
-              <span>Ver todas</span>
-              <ArrowUpRight className="w-3.5 h-3.5" />
-            </button>
+
+            <span className="text-[11px] text-slate-500">
+              Período
+            </span>
+
           </div>
 
-          {(!analytics?.todayReservationsList || analytics.todayReservationsList.length === 0) ? (
-            <div className="text-center py-10 text-slate-400 text-xs">
-              Nenhuma reserva agendada para hoje.
+          <div className="mt-4 space-y-3">
+
+            {analytics?.courtUtilization &&
+            analytics.courtUtilization.length >
+              0 ? (
+
+              analytics.courtUtilization.map(
+                (court) => (
+
+                  <div
+                    key={
+                      court.courtId
+                    }
+                    className="space-y-1.5"
+                  >
+
+                    <div className="flex items-center justify-between">
+
+                      <div>
+
+                        <div className="text-xs font-bold text-slate-200">
+                          {
+                            court.courtName
+                          }
+                        </div>
+
+                        <div className="text-[10px] text-slate-500">
+                          {
+                            court.modalityName ||
+                            'Modalidade'
+                          }
+                        </div>
+
+                      </div>
+
+                      <div className="text-right">
+
+                        <div className="text-xs font-bold text-white">
+                          {
+                            court.utilizationRate
+                          }
+                          %
+                        </div>
+
+                        <div className="text-[10px] text-slate-500">
+                          {
+                            court.reservedHours.toFixed(
+                              1
+                            )
+                          }
+                          h
+                        </div>
+
+                      </div>
+
+                    </div>
+
+                    <div className="w-full h-2 rounded-full bg-slate-950 border border-slate-800 overflow-hidden">
+
+                      <div
+                        className="h-full bg-blue-400 rounded-full"
+                        style={{
+                          width: `${Math.max(
+                            2,
+                            court.utilizationRate
+                          )}%`,
+                        }}
+                      />
+
+                    </div>
+
+                  </div>
+
+                )
+              )
+
+            ) : (
+
+              <div className="py-8 text-center text-xs text-slate-400">
+                Sem dados de utilização.
+              </div>
+
+            )}
+
+          </div>
+
+        </div>
+
+        {/* PICO */}
+
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl">
+
+          <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+
+            <div className="flex items-center gap-2">
+
+              <Flame className="w-4 h-4 text-amber-400" />
+
+              <h3 className="text-sm font-bold text-white">
+                Horários Mais Procurados
+              </h3>
+
             </div>
-          ) : (
-            <div className="space-y-2.5">
-              {analytics.todayReservationsList.map((res) => {
-                const startTime = new Date(res.start_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-                const endTime = new Date(res.end_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-                const isPaid = res.payment_status === 'PAID';
-                const isCancelled = res.status === 'CANCELLED';
+
+            <span className="text-[11px] text-slate-500">
+              Picos
+            </span>
+
+          </div>
+
+          <div className="mt-4 space-y-3">
+
+            {analytics?.peakHours &&
+            analytics.peakHours.filter(
+              (item) =>
+                item.count >
+                0
+            ).length >
+              0 ? (
+
+              analytics.peakHours
+                .filter(
+                  (item) =>
+                    item.count >
+                    0
+                )
+                .slice(
+                  0,
+                  5
+                )
+                .map(
+                  (item) => (
+
+                    <div
+                      key={
+                        item.hour
+                      }
+                      className="space-y-1.5"
+                    >
+
+                      <div className="flex items-center justify-between">
+
+                        <span className="font-mono text-xs font-bold text-slate-300">
+                          {item.hour}
+                        </span>
+
+                        <span className="text-xs text-slate-400">
+                          {
+                            item.count
+                          }{' '}
+                          reservas
+                        </span>
+
+                      </div>
+
+                      <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-800">
+
+                        <div
+                          className="h-full bg-amber-400 rounded-full"
+                          style={{
+                            width: `${Math.max(
+                              5,
+                              item.percentage
+                            )}%`,
+                          }}
+                        />
+
+                      </div>
+
+                    </div>
+
+                  )
+                )
+
+            ) : (
+
+              <div className="py-8 text-center text-xs text-slate-400">
+                Ainda não existem reservas para identificar os horários de pico.
+              </div>
+
+            )}
+
+          </div>
+
+        </div>
+
+      </div>
+
+      {/* ======================================================
+          RESERVAS DE HOJE
+      ====================================================== */}
+
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl">
+
+        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+
+          <div>
+
+            <div className="flex items-center gap-2">
+
+              <Clock className="w-4 h-4 text-emerald-400" />
+
+              <h3 className="text-sm font-bold text-slate-100">
+                Reservas de Hoje
+              </h3>
+
+            </div>
+
+            <p className="text-xs text-slate-400">
+              Lista cronológica operacional
+            </p>
+
+          </div>
+
+          <button
+            type="button"
+            onClick={() =>
+              onNavigate(
+                '/admin/reservas'
+              )
+            }
+            className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer"
+          >
+            Ver todas
+
+            <ArrowUpRight className="w-3.5 h-3.5" />
+          </button>
+
+        </div>
+
+        <div className="mt-4 space-y-2.5">
+
+          {analytics?.todayReservationsList &&
+          analytics.todayReservationsList.length >
+            0 ? (
+
+            analytics.todayReservationsList.map(
+              (reservation) => {
+
+                const startTime =
+                  new Date(
+                    reservation.start_at
+                  ).toLocaleTimeString(
+                    'pt-BR',
+                    {
+                      hour:
+                        '2-digit',
+                      minute:
+                        '2-digit',
+                      timeZone:
+                        activeArena.timezone ||
+                        'America/Sao_Paulo',
+                    }
+                  );
+
+                const endTime =
+                  new Date(
+                    reservation.end_at
+                  ).toLocaleTimeString(
+                    'pt-BR',
+                    {
+                      hour:
+                        '2-digit',
+                      minute:
+                        '2-digit',
+                      timeZone:
+                        activeArena.timezone ||
+                        'America/Sao_Paulo',
+                    }
+                  );
+
+                const isPaid =
+                  reservation.payment_status ===
+                  'PAID';
+
+                const isCancelled =
+                  reservation.status ===
+                  'CANCELLED';
 
                 return (
+
                   <div
-                    key={res.id}
-                    className={`p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition ${
-                      isCancelled ? 'opacity-50 line-through' : 'hover:border-slate-700'
+                    key={
+                      reservation.id
+                    }
+                    className={`p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                      isCancelled
+                        ? 'opacity-50'
+                        : 'hover:border-slate-700'
                     }`}
                   >
+
                     <div className="flex items-center gap-3">
+
                       <div className="px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono text-xs font-extrabold">
                         {startTime}
                       </div>
+
                       <div>
+
                         <p className="text-xs font-bold text-slate-200">
-                          {res.customer?.full_name || 'Cliente'}
+                          {reservation.customer?.full_name ||
+                            'Cliente'}
                         </p>
+
                         <p className="text-[11px] text-slate-400">
-                          {res.court?.name} • {startTime} às {endTime}
+                          {reservation.court?.name ||
+                            'Quadra'}
+                          {' • '}
+                          {startTime}
+                          {' às '}
+                          {endTime}
                         </p>
+
                       </div>
+
                     </div>
 
-                    <div className="flex items-center justify-between sm:justify-end gap-3">
-                      <div className="text-left sm:text-right">
-                        <span className="text-xs font-black text-slate-100 block">
-                          R$ {res.amount.toFixed(2)}
+                    <div className="flex items-center gap-3">
+
+                      <span className="text-xs font-bold text-emerald-400">
+                        R${' '}
+                        {Number(
+                          reservation.amount ||
+                            0
+                        ).toFixed(
+                          2
+                        )}
+                      </span>
+
+                      {isPaid ? (
+
+                        <span className="px-2 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 text-[9px] font-bold">
+                          PAGO
                         </span>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                            isPaid
-                              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                              : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
-                          }`}>
-                            {isPaid ? 'PAGO' : 'PENDENTE'}
-                          </span>
-                          {isCancelled && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-400 border border-rose-500/30">
-                              CANCELADA
-                            </span>
-                          )}
-                        </div>
-                      </div>
 
-                      {!isPaid && !isCancelled && (
+                      ) : (
+
                         <button
-                          onClick={() => handleMarkAsPaid(res)}
-                          title="Marcar como Pago"
-                          className="px-2.5 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[11px] font-bold transition cursor-pointer"
+                          type="button"
+                          onClick={() =>
+                            handleMarkAsPaid(
+                              reservation
+                            )
+                          }
+                          className="px-2 py-1 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 text-[9px] font-bold cursor-pointer"
                         >
-                          Receber
+                          MARCAR PAGO
                         </button>
+
                       )}
+
                     </div>
+
                   </div>
+
                 );
-              })}
+              }
+            )
+
+          ) : (
+
+            <div className="py-10 text-center text-xs text-slate-400">
+              Nenhuma reserva agendada para hoje.
             </div>
+
           )}
+
         </div>
 
-        {/* Quadras Mais Utilizadas & Horários de Maior Demanda */}
-        <div className="space-y-6">
-          {/* Ranking: Quadras Mais Utilizadas */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-xl space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <Layers className="w-4 h-4 text-emerald-400" />
-                <h3 className="text-sm font-bold text-slate-100">Utilização das Quadras</h3>
-              </div>
-              <span className="text-[11px] text-slate-400">No período</span>
-            </div>
-
-            {(!analytics?.courtUtilization || analytics.courtUtilization.length === 0) ? (
-              <div className="py-6 text-center text-slate-400 text-xs">
-                Nenhuma quadra ativa cadastrada.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {analytics.courtUtilization.map((c, idx) => (
-                  <div key={c.courtId} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-semibold text-slate-200">
-                        {idx + 1}. {c.courtName}
-                      </span>
-                      <span className="font-bold text-emerald-400">
-                        {c.utilizationRate}%
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-800/80">
-                      <div
-                        className="bg-emerald-400 h-full rounded-full transition-all duration-500"
-                        style={{ width: `${Math.max(2, c.utilizationRate)}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Horários de Maior Demanda */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-xl space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <Flame className="w-4 h-4 text-amber-400" />
-                <h3 className="text-sm font-bold text-slate-100">Horários Mais Procurados</h3>
-              </div>
-              <span className="text-[11px] text-slate-400">Picos</span>
-            </div>
-
-            {(!analytics?.peakHours || analytics.peakHours.filter(p => p.count > 0).length === 0) ? (
-              <div className="py-6 text-center text-slate-400 text-xs">
-                Ainda não existem reservas para mapear horários de pico.
-              </div>
-            ) : (
-              <div className="space-y-2.5">
-                {analytics.peakHours.filter(p => p.count > 0).slice(0, 5).map((ph) => (
-                  <div key={ph.hour} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-mono font-bold text-slate-300">{ph.hour}</span>
-                      <span className="text-slate-400 font-semibold">{ph.count} reservas</span>
-                    </div>
-                    <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-800/80">
-                      <div
-                        className="bg-amber-400 h-full rounded-full transition-all duration-500"
-                        style={{ width: `${Math.max(5, ph.percentage)}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
       </div>
 
-      {/* MODAL: NOVO CLIENTE */}
+      {/* ======================================================
+          MODAL NOVO CLIENTE
+      ====================================================== */}
+
       {showNewClientModal && (
+
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 animate-fadeIn">
+
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl">
+
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+
               <div className="flex items-center gap-2">
+
                 <UserPlus className="w-5 h-5 text-purple-400" />
-                <h3 className="text-base font-bold text-white">Novo Cliente</h3>
+
+                <h3 className="text-base font-bold text-white">
+                  Novo Cliente
+                </h3>
+
               </div>
-              <button 
-                onClick={() => setShowNewClientModal(false)}
+
+              <button
+                type="button"
+                onClick={() =>
+                  setShowNewClientModal(
+                    false
+                  )
+                }
                 className="text-slate-400 hover:text-white cursor-pointer"
               >
-                &times;
+                ×
               </button>
+
             </div>
 
-            <form onSubmit={handleCreateCustomer} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Nome Completo *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ex: Carlos Eduardo"
-                  value={clientForm.fullName}
-                  onChange={(e) => setClientForm({ ...clientForm, fullName: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                />
-              </div>
+            <form
+              onSubmit={
+                handleCreateCustomer
+              }
+              className="space-y-4 mt-5"
+            >
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Telefone / WhatsApp *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="(11) 99999-8888"
-                  value={clientForm.phone}
-                  onChange={(e) => setClientForm({ ...clientForm, phone: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                />
-              </div>
+              <input
+                type="text"
+                required
+                placeholder="Nome completo"
+                value={
+                  clientForm.fullName
+                }
+                onChange={(
+                  event
+                ) =>
+                  setClientForm(
+                    {
+                      ...clientForm,
+                      fullName:
+                        event.target.value,
+                    }
+                  )
+                }
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-purple-500"
+              />
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">E-mail (opcional)</label>
-                <input
-                  type="email"
-                  placeholder="cliente@exemplo.com"
-                  value={clientForm.email}
-                  onChange={(e) => setClientForm({ ...clientForm, email: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                />
-              </div>
+              <input
+                type="text"
+                required
+                placeholder="Telefone / WhatsApp"
+                value={
+                  clientForm.phone
+                }
+                onChange={(
+                  event
+                ) =>
+                  setClientForm(
+                    {
+                      ...clientForm,
+                      phone:
+                        event.target.value,
+                    }
+                  )
+                }
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-purple-500"
+              />
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Observações</label>
-                <textarea
-                  rows={2}
-                  placeholder="Ex: Mensalista de futebol nas terças-feiras..."
-                  value={clientForm.notes}
-                  onChange={(e) => setClientForm({ ...clientForm, notes: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                />
-              </div>
+              <input
+                type="email"
+                placeholder="E-mail"
+                value={
+                  clientForm.email
+                }
+                onChange={(
+                  event
+                ) =>
+                  setClientForm(
+                    {
+                      ...clientForm,
+                      email:
+                        event.target.value,
+                    }
+                  )
+                }
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-purple-500"
+              />
 
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <textarea
+                rows={3}
+                placeholder="Observações"
+                value={
+                  clientForm.notes
+                }
+                onChange={(
+                  event
+                ) =>
+                  setClientForm(
+                    {
+                      ...clientForm,
+                      notes:
+                        event.target.value,
+                    }
+                  )
+                }
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200 resize-none focus:outline-none focus:ring-1 focus:ring-purple-500"
+              />
+
+              <div className="flex justify-end gap-2">
+
                 <button
                   type="button"
-                  onClick={() => setShowNewClientModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white cursor-pointer"
+                  onClick={() =>
+                    setShowNewClientModal(
+                      false
+                    )
+                  }
+                  className="px-4 py-2 rounded-xl text-xs text-slate-400 hover:text-white cursor-pointer"
                 >
                   Cancelar
                 </button>
+
                 <button
                   type="submit"
-                  className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-lg shadow-purple-500/20 cursor-pointer"
+                  className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs cursor-pointer"
                 >
                   Cadastrar Cliente
                 </button>
+
               </div>
+
             </form>
+
           </div>
+
         </div>
+
       )}
 
-      {/* MODAL: BLOQUEAR QUADRA */}
+      {/* ======================================================
+          MODAL BLOQUEAR QUADRA
+      ====================================================== */}
+
       {showBlockModal && (
+
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 animate-fadeIn">
+
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl">
+
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+
               <div className="flex items-center gap-2">
+
                 <Ban className="w-5 h-5 text-amber-400" />
-                <h3 className="text-base font-bold text-white">Bloquear Quadra</h3>
+
+                <h3 className="text-base font-bold text-white">
+                  Bloquear Quadra
+                </h3>
+
               </div>
-              <button 
-                onClick={() => setShowBlockModal(false)}
+
+              <button
+                type="button"
+                onClick={() =>
+                  setShowBlockModal(
+                    false
+                  )
+                }
                 className="text-slate-400 hover:text-white cursor-pointer"
               >
-                &times;
+                ×
               </button>
+
             </div>
 
-            <form onSubmit={handleCreateCourtBlock} className="space-y-4">
+            <form
+              onSubmit={
+                handleCreateCourtBlock
+              }
+              className="space-y-4 mt-5"
+            >
+
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Selecione a Quadra *</label>
+
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Quadra *
+                </label>
+
                 <select
                   required
-                  value={blockForm.courtId}
-                  onChange={(e) => setBlockForm({ ...blockForm, courtId: e.target.value })}
+                  value={
+                    blockForm.courtId
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setBlockForm(
+                      {
+                        ...blockForm,
+                        courtId:
+                          event.target.value,
+                      }
+                    )
+                  }
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500"
                 >
-                  {courts.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.modality?.name || 'Quadra'})
-                    </option>
-                  ))}
+
+                  {courts.map(
+                    (court) => (
+
+                      <option
+                        key={
+                          court.id
+                        }
+                        value={
+                          court.id
+                        }
+                      >
+                        {court.name}
+                        {' ('}
+                        {court.modality?.name ||
+                          'Quadra'}
+                        {')'}
+                      </option>
+
+                    )
+                  )}
+
                 </select>
+
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Data do Bloqueio *</label>
+
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Data *
+                </label>
+
                 <input
                   type="date"
                   required
-                  value={blockForm.date}
-                  onChange={(e) => setBlockForm({ ...blockForm, date: e.target.value })}
+                  value={
+                    blockForm.date
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setBlockForm(
+                      {
+                        ...blockForm,
+                        date:
+                          event.target.value,
+                      }
+                    )
+                  }
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500"
                 />
+
               </div>
 
               <div className="grid grid-cols-2 gap-3">
+
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Início (Horário)</label>
+
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Início *
+                  </label>
+
                   <input
                     type="time"
                     required
-                    value={blockForm.startHour}
-                    onChange={(e) => setBlockForm({ ...blockForm, startHour: e.target.value })}
+                    value={
+                      blockForm.startHour
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      setBlockForm(
+                        {
+                          ...blockForm,
+                          startHour:
+                            event.target.value,
+                        }
+                      )
+                    }
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500"
                   />
+
                 </div>
+
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Fim (Horário)</label>
+
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Término *
+                  </label>
+
                   <input
                     type="time"
                     required
-                    value={blockForm.endHour}
-                    onChange={(e) => setBlockForm({ ...blockForm, endHour: e.target.value })}
+                    value={
+                      blockForm.endHour
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      setBlockForm(
+                        {
+                          ...blockForm,
+                          endHour:
+                            event.target.value,
+                        }
+                      )
+                    }
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500"
                   />
+
                 </div>
+
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Motivo do Bloqueio *</label>
+
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Motivo *
+                </label>
+
                 <input
                   type="text"
                   required
-                  placeholder="Ex: Manutenção da areia / Clima chuvoso / Evento Privado"
-                  value={blockForm.reason}
-                  onChange={(e) => setBlockForm({ ...blockForm, reason: e.target.value })}
+                  value={
+                    blockForm.reason
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setBlockForm(
+                      {
+                        ...blockForm,
+                        reason:
+                          event.target.value,
+                      }
+                    )
+                  }
+                  placeholder="Ex: Manutenção"
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500"
                 />
+
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <div>
+
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Observações
+                </label>
+
+                <textarea
+                  rows={3}
+                  value={
+                    blockForm.notes
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setBlockForm(
+                      {
+                        ...blockForm,
+                        notes:
+                          event.target.value,
+                      }
+                    )
+                  }
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+
                 <button
                   type="button"
-                  onClick={() => setShowBlockModal(false)}
+                  onClick={() =>
+                    setShowBlockModal(
+                      false
+                    )
+                  }
                   className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white cursor-pointer"
                 >
                   Cancelar
                 </button>
+
                 <button
                   type="submit"
-                  className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/20 cursor-pointer"
+                  className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs cursor-pointer"
                 >
                   Confirmar Bloqueio
                 </button>
+
               </div>
+
             </form>
+
           </div>
+
         </div>
+
       )}
 
-      {/* MODAL: 11 TESTES DE INTEGRIDADE */}
-      {activeArena && (
-        <DiagnosticTestsModal
-          arenaId={activeArena.id}
-          arenaName={activeArena.name}
-          isOpen={showTestsModal}
-          onClose={() => setShowTestsModal(false)}
-        />
-      )}
+      {/* ======================================================
+          DIAGNÓSTICO
+      ====================================================== */}
+
+      <DiagnosticTestsModal
+        arenaId={
+          activeArena.id
+        }
+        arenaName={
+          activeArena.name
+        }
+        isOpen={
+          showTestsModal
+        }
+        onClose={() =>
+          setShowTestsModal(
+            false
+          )
+        }
+      />
+
     </div>
   );
 };

@@ -473,12 +473,54 @@ export const arenaService = {
     return this.updateReservation(id, { status: 'CANCELLED' }, arenaId);
   },
 
-  async deleteReservation(id: string): Promise<void> {
+  async deleteReservation(
+    id: string,
+    arenaId?: string
+  ): Promise<void> {
     if (isSupabaseConfigured) {
-      const { error } = await supabase.from('reservations').delete().eq('id', id);
-      if (error) throw error;
+      let query = supabase
+        .from('reservations')
+        .delete()
+        .eq('id', id);
+
+      /*
+      * Quando a arena é informada, utilizamos também
+      * o arena_id como camada adicional de segurança.
+      */
+      if (arenaId) {
+        query = query.eq(
+          'arena_id',
+          arenaId
+        );
+      }
+
+      const {
+        data,
+        error,
+      } = await query
+        .select('id')
+        .maybeSingle();
+
+      if (error) {
+        throw error;
+      }
+
+      /*
+      * Se nenhuma linha foi excluída, provavelmente:
+      *
+      * - a reserva não existe;
+      * - pertence a outra arena;
+      * - ou o RLS não permitiu a operação.
+      */
+      if (!data) {
+        throw new Error(
+          'A reserva não foi excluída. Verifique se ela pertence à arena atual e se o usuário possui permissão para excluí-la.'
+        );
+      }
+
       return;
     }
+
     sandboxDB.deleteReservation(id);
   },
 
