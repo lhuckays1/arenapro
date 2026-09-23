@@ -50,7 +50,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState<boolean>(true);
 
   // ==========================================================
-  // CARREGAR ARENAS PERMITIDAS PARA O USUÁRIO
+  // CARREGAR ARENAS PERMITIDAS PARA O USUÃRIO
   // ==========================================================
 
   const loadUserArenas = async (
@@ -89,8 +89,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
 
     // --------------------------------------------------------
-    // Se existe uma arena salva E ela pertence à lista atual,
-    // podemos reutilizá-la.
+    // Se existe uma arena salva E ela pertence Ã  lista atual,
+    // podemos reutilizÃ¡-la.
     // --------------------------------------------------------
 
     if (savedArenaId) {
@@ -104,7 +104,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     // --------------------------------------------------------
-    // Caso a arena salva não pertença ao usuário atual,
+    // Caso a arena salva nÃ£o pertenÃ§a ao usuÃ¡rio atual,
     // usamos a primeira arena permitida.
     // --------------------------------------------------------
 
@@ -119,7 +119,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // ==========================================================
-  // CARREGAR CONTEXTO COMPLETO DO USUÁRIO
+  // CARREGAR CONTEXTO COMPLETO DO USUÃRIO
   // ==========================================================
 
   const loadAuthenticatedContext = async (
@@ -142,7 +142,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // ==========================================================
-  // INICIALIZAÇÃO
+  // INICIALIZAÃ‡ÃƒO
   // ==========================================================
 
   const init = async () => {
@@ -152,7 +152,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const session = await authService.getInitialSession();
 
       // ------------------------------------------------------
-      // NÃO AUTENTICADO
+      // NÃƒO AUTENTICADO
       // ------------------------------------------------------
 
       if (!session) {
@@ -166,7 +166,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       // ------------------------------------------------------
-      // USUÁRIO AUTENTICADO
+      // USUÃRIO AUTENTICADO
       // ------------------------------------------------------
 
       setUser(session.user);
@@ -179,7 +179,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         );
 
       console.log(
-        '[Auth] Usuário autenticado:',
+        '[Auth] UsuÃ¡rio autenticado:',
         session.profile.email || session.user.email
       );
 
@@ -189,7 +189,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       );
 
       console.log(
-        '[Auth] Arenas disponíveis:',
+        '[Auth] Arenas disponÃveis:',
         selectedArena?.name || 'Nenhuma'
       );
 
@@ -303,6 +303,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   ) => {
     setLoading(true);
 
+    // Evita reutilizar uma assinatura da sessão anterior
+    // enquanto o novo usuário ainda está carregando o contexto.
+    setActiveSubscription(null);
+
     try {
       const session =
         await authService.signInWithEmail(
@@ -316,6 +320,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       setProfile(session.profile);
+
+      // IMPORTANTE:
+      // O login antigo apenas carregava user/profile.
+      // A arena ativa ficava para uma etapa posterior.
+      // Isso fazia o App enxergar temporariamente:
+      //
+      //   profile = ARENA_ADMIN
+      //   activeArena = null
+      //
+      // e exibir "Assinatura necessária".
+      //
+      // Agora carregamos as arenas imediatamente durante o login.
+      // Para ARENA_ADMIN/STAFF também deixamos subscriptionLoading
+      // ativo antes de liberar o App, evitando o flash da tela
+      // de assinatura enquanto o useEffect consulta o banco.
+      const requiresSubscription =
+        session.profile.role === 'ARENA_ADMIN' ||
+        session.profile.role === 'ARENA_STAFF';
+
+      if (requiresSubscription) {
+        setSubscriptionLoading(true);
+      } else {
+        setSubscriptionLoading(false);
+      }
+
+      const selectedArena =
+        await loadAuthenticatedContext(
+          session.user.id,
+          session.profile.role
+        );
+
+      // Se o usuário precisa de assinatura, o useEffect de assinatura
+      // será disparado assim que activeArena for atualizado.
+      // Caso não exista arena vinculada, não há consulta a fazer.
+      if (
+        requiresSubscription &&
+        !selectedArena
+      ) {
+        setSubscriptionLoading(false);
+      }
 
       return session;
     } finally {
@@ -380,7 +424,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // ------------------------------------------------------
       // IMPORTANTE:
-      // não mantemos a arena do usuário anterior
+      // nÃ£o mantemos a arena do usuÃ¡rio anterior
       // ------------------------------------------------------
 
       localStorage.removeItem(
