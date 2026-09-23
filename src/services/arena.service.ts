@@ -1260,7 +1260,7 @@ export const arenaService = {
     if (isSupabaseConfigured) {
       let query = supabase
         .from('financial_transactions')
-        .select('*, reservation:reservations(*), customer:customers(*), service:services(*), created_by_profile:profiles!created_by(*)')
+        .select('*, reservation:reservations(*), customer:customers(*), service:services(*)')
         .order('transaction_date', { ascending: false })
         .order('created_at', { ascending: false });
 
