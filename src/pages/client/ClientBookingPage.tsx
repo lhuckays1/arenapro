@@ -39,11 +39,18 @@ interface PendingBooking {
 }
 
 const PENDING_BOOKING_STORAGE_KEY = 'arenapro_pending_booking';
+const RESUME_PENDING_BOOKING_KEY = 'arenapro_resume_pending_booking';
 
 const getPendingBooking = (): PendingBooking | null => {
   try {
+    const shouldResume = sessionStorage.getItem(RESUME_PENDING_BOOKING_KEY) === 'true';
+    if (!shouldResume) return null;
+
     const raw = sessionStorage.getItem(PENDING_BOOKING_STORAGE_KEY);
-    if (!raw) return null;
+    if (!raw) {
+      sessionStorage.removeItem(RESUME_PENDING_BOOKING_KEY);
+      return null;
+    }
 
     const parsed = JSON.parse(raw);
 
@@ -57,6 +64,7 @@ const getPendingBooking = (): PendingBooking | null => {
       parsed.step !== 4
     ) {
       sessionStorage.removeItem(PENDING_BOOKING_STORAGE_KEY);
+      sessionStorage.removeItem(RESUME_PENDING_BOOKING_KEY);
       return null;
     }
 
@@ -64,12 +72,14 @@ const getPendingBooking = (): PendingBooking | null => {
   } catch (error) {
     console.error('Erro ao recuperar reserva pendente:', error);
     sessionStorage.removeItem(PENDING_BOOKING_STORAGE_KEY);
+    sessionStorage.removeItem(RESUME_PENDING_BOOKING_KEY);
     return null;
   }
 };
 
 const clearPendingBooking = () => {
   sessionStorage.removeItem(PENDING_BOOKING_STORAGE_KEY);
+  sessionStorage.removeItem(RESUME_PENDING_BOOKING_KEY);
 };
 
 export const ClientBookingPage: React.FC<ClientBookingPageProps> = ({
@@ -206,14 +216,15 @@ export const ClientBookingPage: React.FC<ClientBookingPageProps> = ({
             // A quadra/modalidade pode ter sido removida ou desativada.
             clearPendingBooking();
           }
+        } else if (storedBooking) {
+          // Nunca reaproveitar uma reserva anterior em outra arena.
+          clearPendingBooking();
         }
 
         // Pre-selection handling
         if (preselectedModalityId && activeMods.some(m => m.id === preselectedModalityId)) {
           setSelectedModalityId(preselectedModalityId);
           setStep(2);
-        } else if (activeMods.length > 0 && !selectedModalityId) {
-          setSelectedModalityId(activeMods[0].id);
         }
 
         if (preselectedCourtId && activeCrts.some(c => c.id === preselectedCourtId)) {
@@ -286,6 +297,15 @@ export const ClientBookingPage: React.FC<ClientBookingPageProps> = ({
     }
 
     setStep(4);
+
+    // Só marcamos a reserva para retomada automática quando o cliente
+    // realmente precisa passar pelo login/cadastro. Assim uma nova reserva
+    // nunca herda uma reserva antiga salva no sessionStorage.
+    if (!user || !profile) {
+      sessionStorage.setItem(RESUME_PENDING_BOOKING_KEY, 'true');
+    } else {
+      sessionStorage.removeItem(RESUME_PENDING_BOOKING_KEY);
+    }
 
     // Se o cliente ainda não estiver autenticado, a autenticação deve
     // acontecer ANTES da confirmação final da reserva.
