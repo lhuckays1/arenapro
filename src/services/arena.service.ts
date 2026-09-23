@@ -1260,7 +1260,7 @@ export const arenaService = {
     if (isSupabaseConfigured) {
       let query = supabase
         .from('financial_transactions')
-        .select('*, reservation:reservations(*), customer:customers(*), service:services(*)')
+        .select('*, reservation:reservations(*), customer:customers(*), service:services(*), created_by_profile:profiles!created_by(*)')
         .order('transaction_date', { ascending: false })
         .order('created_at', { ascending: false });
 
@@ -1486,6 +1486,94 @@ export const arenaService = {
     }
 
     return pendingItems.sort((a, b) => new Date(b.reservation.start_at).getTime() - new Date(a.reservation.start_at).getTime());
+  },
+
+  /**
+   * Calcula o intervalo de datas utilizado pelo módulo financeiro.
+   *
+   * O financeiro trabalha com datas no formato YYYY-MM-DD, portanto
+   * evitamos depender do fuso horário do navegador para montar o período.
+   */
+  calculateDateRange(
+    period: PeriodFilter = 'MONTH',
+    customStart?: string,
+    customEnd?: string
+  ): { startDate: string; endDate: string } {
+    const now = new Date();
+
+    // Utiliza a data local da aplicação para o fechamento diário.
+    const pad = (value: number) => String(value).padStart(2, '0');
+    const formatDate = (date: Date): string =>
+      `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+
+    const today = formatDate(now);
+
+    // Período personalizado.
+    if (period === 'CUSTOM') {
+      let startDate = customStart || today;
+      let endDate = customEnd || today;
+
+      if (startDate > endDate) {
+        [startDate, endDate] = [endDate, startDate];
+      }
+
+      return { startDate, endDate };
+    }
+
+    // Todo o histórico. Usamos uma data inicial ampla, sem limitar
+    // artificialmente os lançamentos já existentes.
+    if (period === 'ALL') {
+      return {
+        startDate: '2000-01-01',
+        endDate: today,
+      };
+    }
+
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    switch (period) {
+      case 'TODAY':
+      case 'DAY':
+        break;
+
+      case 'WEEK': {
+        // Semana iniciando na segunda-feira.
+        const dayOfWeek = start.getDay(); // 0 = domingo
+        const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+        start.setDate(start.getDate() - daysFromMonday);
+        end.setDate(start.getDate() + 6);
+        break;
+      }
+
+      case '7_DAYS':
+        start.setDate(start.getDate() - 6);
+        break;
+
+      case '30_DAYS':
+        start.setDate(start.getDate() - 29);
+        break;
+
+      case 'MONTH':
+        start.setDate(1);
+        end.setMonth(end.getMonth() + 1, 0);
+        break;
+
+      case 'YEAR':
+        start.setMonth(0, 1);
+        end.setMonth(11, 31);
+        break;
+
+      default:
+        // Mantém comportamento seguro caso um novo filtro seja
+        // adicionado futuramente sem atualizar esta função.
+        break;
+    }
+
+    return {
+      startDate: formatDate(start),
+      endDate: formatDate(end),
+    };
   },
 
   async getFinancialSummary(
