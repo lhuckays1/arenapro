@@ -25,7 +25,7 @@ export const ClientLayout: React.FC<ClientLayoutProps> = ({ currentPath, onNavig
 
   const clientNavItems = [
     { name: 'Início', path: '/app/inicio', icon: <Home className="w-5 h-5" /> },
-    { name: 'Reservar', path: '/app/reservar', icon: <CalendarDays className="w-5 h-5" /> },
+    { name: 'Reservar', path: '/app/escolher-arena', icon: <CalendarDays className="w-5 h-5" /> },
     { name: 'Minhas Reservas', path: '/app/minhas-reservas', icon: <BookmarkCheck className="w-5 h-5" /> },
     { name: 'Perfil', path: '/app/perfil', icon: <User className="w-5 h-5" /> },
   ];

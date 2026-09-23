@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Arena, ArenaSubscription, Profile, UserRole } from '../types';
-import { authService, AuthSession } from '../services/auth.service';
+import { authService } from '../services/auth.service';
 import { arenaService } from '../services/arena.service';
 import { saasService } from '../services/saas.service';
 import { isSupabaseConfigured } from '../lib/supabase';
@@ -15,8 +15,17 @@ interface AuthContextType {
   loading: boolean;
   isConfigured: boolean;
   setActiveArena: (arena: Arena) => void;
-  signIn: (email: string, pass: string) => Promise<void>;
-  signUp: (name: string, email: string, pass: string, role?: UserRole) => Promise<void>;
+  signIn: (
+    email: string,
+    pass: string
+  ) => Promise<AuthSession>;
+
+  signUp: (
+    name: string,
+    email: string,
+    pass: string,
+    role?: UserRole
+  ) => Promise<AuthSession>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   switchPersona: (role: UserRole) => Promise<void>;
@@ -28,11 +37,113 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<{ id: string; email: string } | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+
   const [activeArena, setActiveArenaState] = useState<Arena | null>(null);
   const [arenas, setArenas] = useState<Arena[]>([]);
-  const [activeSubscription, setActiveSubscription] = useState<ArenaSubscription | null>(null);
-  const [subscriptionLoading, setSubscriptionLoading] = useState<boolean>(false);
+
+  const [activeSubscription, setActiveSubscription] =
+    useState<ArenaSubscription | null>(null);
+
+  const [subscriptionLoading, setSubscriptionLoading] =
+    useState<boolean>(false);
+
   const [loading, setLoading] = useState<boolean>(true);
+
+  // ==========================================================
+  // CARREGAR ARENAS PERMITIDAS PARA O USUÁRIO
+  // ==========================================================
+
+  const loadUserArenas = async (
+    userId: string,
+    userRole: UserRole
+  ): Promise<Arena[]> => {
+    if (userRole === 'SUPER_ADMIN') {
+      return await arenaService.getArenas();
+    }
+
+    if (
+      userRole === 'ARENA_ADMIN' ||
+      userRole === 'ARENA_STAFF'
+    ) {
+      return await arenaService.getManagedArenas(userId);
+    }
+
+    // CLIENT
+    return await arenaService.getArenas();
+  };
+
+  // ==========================================================
+  // DEFINIR ARENA ATIVA
+  // ==========================================================
+
+  const selectInitialArena = (
+    loadedArenas: Arena[]
+  ): Arena | null => {
+    if (loadedArenas.length === 0) {
+      localStorage.removeItem('arenapro_active_arena_id');
+      return null;
+    }
+
+    const savedArenaId = localStorage.getItem(
+      'arenapro_active_arena_id'
+    );
+
+    // --------------------------------------------------------
+    // Se existe uma arena salva E ela pertence à lista atual,
+    // podemos reutilizá-la.
+    // --------------------------------------------------------
+
+    if (savedArenaId) {
+      const savedArena = loadedArenas.find(
+        arena => arena.id === savedArenaId
+      );
+
+      if (savedArena) {
+        return savedArena;
+      }
+    }
+
+    // --------------------------------------------------------
+    // Caso a arena salva não pertença ao usuário atual,
+    // usamos a primeira arena permitida.
+    // --------------------------------------------------------
+
+    const firstArena = loadedArenas[0];
+
+    localStorage.setItem(
+      'arenapro_active_arena_id',
+      firstArena.id
+    );
+
+    return firstArena;
+  };
+
+  // ==========================================================
+  // CARREGAR CONTEXTO COMPLETO DO USUÁRIO
+  // ==========================================================
+
+  const loadAuthenticatedContext = async (
+    userId: string,
+    userRole: UserRole
+  ) => {
+    const loadedArenas = await loadUserArenas(
+      userId,
+      userRole
+    );
+
+    setArenas(loadedArenas);
+
+    const selectedArena =
+      selectInitialArena(loadedArenas);
+
+    setActiveArenaState(selectedArena);
+
+    return selectedArena;
+  };
+
+  // ==========================================================
+  // INICIALIZAÇÃO
+  // ==========================================================
 
   const init = async () => {
     try {
@@ -40,35 +151,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const session = await authService.getInitialSession();
 
-      let loadedArenas: Arena[] = [];
-      if (session?.profile?.role === 'SUPER_ADMIN') {
-        loadedArenas = await arenaService.getArenas();
-      } else if (
-        session?.profile?.role === 'ARENA_ADMIN' ||
-        session?.profile?.role === 'ARENA_STAFF'
-      ) {
-        loadedArenas = await arenaService.getManagedArenas(session.user.id);
-      } else {
-        // CLIENT can discover active public arenas for booking.
-        loadedArenas = await arenaService.getArenas();
-      }
+      // ------------------------------------------------------
+      // NÃO AUTENTICADO
+      // ------------------------------------------------------
 
-      setArenas(loadedArenas);
-
-      if (loadedArenas.length > 0) {
-        const savedArenaId = localStorage.getItem('arenapro_active_arena_id');
-        const matched = loadedArenas.find(a => a.id === savedArenaId) || loadedArenas[0];
-        setActiveArenaState(matched);
-      } else {
+      if (!session) {
+        setUser(null);
+        setProfile(null);
+        setArenas([]);
         setActiveArenaState(null);
+        setActiveSubscription(null);
+
+        return;
       }
 
-      if (session) {
-        setUser(session.user);
-        setProfile(session.profile);
-      }
+      // ------------------------------------------------------
+      // USUÁRIO AUTENTICADO
+      // ------------------------------------------------------
+
+      setUser(session.user);
+      setProfile(session.profile);
+
+      const selectedArena =
+        await loadAuthenticatedContext(
+          session.user.id,
+          session.profile.role
+        );
+
+      console.log(
+        '[Auth] Usuário autenticado:',
+        session.profile.email || session.user.email
+      );
+
+      console.log(
+        '[Auth] Perfil:',
+        session.profile.role
+      );
+
+      console.log(
+        '[Auth] Arenas disponíveis:',
+        selectedArena?.name || 'Nenhuma'
+      );
+
     } catch (err) {
-      console.error('Error initializing AuthContext', err);
+      console.error(
+        'Error initializing AuthContext',
+        err
+      );
     } finally {
       setLoading(false);
     }
@@ -78,95 +207,274 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     init();
   }, []);
 
+  // ==========================================================
+  // CARREGAR ASSINATURA DA ARENA ATIVA
+  // ==========================================================
+
   useEffect(() => {
     let cancelled = false;
 
     const loadSubscription = async () => {
-      if (!activeArena || !profile || profile.role === 'CLIENT' || profile.role === 'SUPER_ADMIN') {
+      if (
+        !activeArena ||
+        !profile ||
+        profile.role === 'CLIENT' ||
+        profile.role === 'SUPER_ADMIN'
+      ) {
         if (!cancelled) {
           setActiveSubscription(null);
           setSubscriptionLoading(false);
         }
+
         return;
       }
 
       setSubscriptionLoading(true);
+
       try {
-        const subscription = await saasService.getSubscription(activeArena.id);
-        if (!cancelled) setActiveSubscription(subscription);
+        console.log(
+          '[SaaS] Verificando assinatura da arena:',
+          activeArena.name,
+          activeArena.id
+        );
+
+        const subscription =
+          await saasService.getSubscription(
+            activeArena.id
+          );
+
+        if (!cancelled) {
+          setActiveSubscription(subscription);
+
+          console.log(
+            '[SaaS] Assinatura carregada:',
+            subscription
+          );
+        }
+
       } catch (error) {
-        console.error('Erro ao carregar assinatura da arena:', error);
-        if (!cancelled) setActiveSubscription(null);
+        console.error(
+          '[SaaS] Erro ao carregar assinatura da arena:',
+          error
+        );
+
+        if (!cancelled) {
+          setActiveSubscription(null);
+        }
+
       } finally {
-        if (!cancelled) setSubscriptionLoading(false);
+        if (!cancelled) {
+          setSubscriptionLoading(false);
+        }
       }
     };
 
     loadSubscription();
+
     return () => {
       cancelled = true;
     };
-  }, [activeArena?.id, profile?.id, profile?.role]);
+  }, [
+    activeArena?.id,
+    profile?.id,
+    profile?.role
+  ]);
+
+  // ==========================================================
+  // TROCAR ARENA
+  // ==========================================================
 
   const setActiveArena = (arena: Arena) => {
     setActiveArenaState(arena);
-    localStorage.setItem('arenapro_active_arena_id', arena.id);
+
+    localStorage.setItem(
+      'arenapro_active_arena_id',
+      arena.id
+    );
   };
 
-  const signIn = async (email: string, pass: string) => {
+  // ==========================================================
+  // LOGIN
+  // ==========================================================
+
+  const signIn = async (
+    email: string,
+    pass: string
+  ) => {
     setLoading(true);
+
     try {
-      const session = await authService.signInWithEmail(email, pass);
-      setUser(session.user);
+      const session =
+        await authService.signInWithEmail(
+          email,
+          pass
+        );
+
+      setUser({
+        id: session.user.id,
+        email: session.user.email,
+      });
+
       setProfile(session.profile);
+
+      return session;
     } finally {
       setLoading(false);
     }
   };
 
-  const signUp = async (name: string, email: string, pass: string) => {
+  // ==========================================================
+  // CADASTRO
+  // ==========================================================
+
+  const signUp = async (
+    name: string,
+    email: string,
+    pass: string
+  ) => {
     setLoading(true);
+
     try {
-      const session = await authService.signUpWithEmail(name, email, pass, 'CLIENT');
-      setUser(session.user);
+      const session =
+        await authService.signUpWithEmail(
+          name,
+          email,
+          pass,
+          'CLIENT'
+        );
+
+      console.log(
+        '[AUTH CONTEXT] Cadastro autenticado:',
+        session
+      );
+
+      setUser({
+        id: session.user.id,
+        email: session.user.email,
+      });
+
       setProfile(session.profile);
+
+      return session;
     } finally {
       setLoading(false);
     }
   };
+
+  // ==========================================================
+  // LOGOUT
+  // ==========================================================
 
   const signOut = async () => {
     setLoading(true);
+
     try {
       await authService.signOut();
+
       setUser(null);
       setProfile(null);
+
+      setArenas([]);
+      setActiveArenaState(null);
+      setActiveSubscription(null);
+
+      // ------------------------------------------------------
+      // IMPORTANTE:
+      // não mantemos a arena do usuário anterior
+      // ------------------------------------------------------
+
+      localStorage.removeItem(
+        'arenapro_active_arena_id'
+      );
+
     } finally {
       setLoading(false);
     }
   };
 
-  const resetPassword = async (email: string) => {
+  // ==========================================================
+  // RESET PASSWORD
+  // ==========================================================
+
+  const resetPassword = async (
+    email: string
+  ) => {
     await authService.resetPassword(email);
   };
 
-  const switchPersona = async (role: UserRole) => {
+  // ==========================================================
+  // PERSONA DEMO
+  // ==========================================================
+
+  const switchPersona = async (
+    role: UserRole
+  ) => {
     setLoading(true);
+
     try {
-      const session = await authService.switchDemoPersona(role);
+      const session =
+        await authService.switchDemoPersona(
+          role
+        );
+
       setUser(session.user);
       setProfile(session.profile);
+
+      setActiveSubscription(null);
+
+      const loadedArenas =
+        await loadUserArenas(
+          session.user.id,
+          session.profile.role
+        );
+
+      setArenas(loadedArenas);
+
+      const selectedArena =
+        selectInitialArena(
+          loadedArenas
+        );
+
+      setActiveArenaState(
+        selectedArena
+      );
+
     } finally {
       setLoading(false);
     }
   };
 
+  // ==========================================================
+  // ATUALIZAR PERFIL
+  // ==========================================================
+
   const refreshProfile = async () => {
-    const session = await authService.getInitialSession();
-    if (session) {
-      setUser(session.user);
-      setProfile(session.profile);
-    }
+    const session =
+      await authService.getInitialSession();
+
+    if (!session) return;
+
+    setUser(session.user);
+    setProfile(session.profile);
+
+    setActiveSubscription(null);
+
+    const loadedArenas =
+      await loadUserArenas(
+        session.user.id,
+        session.profile.role
+      );
+
+    setArenas(loadedArenas);
+
+    const selectedArena =
+      selectInitialArena(
+        loadedArenas
+      );
+
+    setActiveArenaState(
+      selectedArena
+    );
   };
 
   return (
@@ -179,7 +487,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         activeSubscription,
         subscriptionLoading,
         loading,
-        isConfigured: isSupabaseConfigured,
+        isConfigured:
+          isSupabaseConfigured,
         setActiveArena,
         signIn,
         signUp,
@@ -195,9 +504,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 };
 
 export const useAuth = (): AuthContextType => {
-  const context = useContext(AuthContext);
+  const context =
+    useContext(AuthContext);
+
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error(
+      'useAuth must be used within an AuthProvider'
+    );
   }
+
   return context;
 };

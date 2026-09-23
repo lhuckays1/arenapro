@@ -23,16 +23,67 @@ import {
 
 interface ClientBookingPageProps {
   onNavigate: (path: string) => void;
+  /** Arena usada quando a página é aberta por /arena/:slug/reservar */
+  arenaSlug?: string;
   preselectedModalityId?: string;
   preselectedCourtId?: string;
 }
 
+interface PendingBooking {
+  arenaId: string;
+  modalityId: string;
+  courtId: string;
+  date: string;
+  hour: string;
+  step: 4;
+}
+
+const PENDING_BOOKING_STORAGE_KEY = 'arenapro_pending_booking';
+
+const getPendingBooking = (): PendingBooking | null => {
+  try {
+    const raw = sessionStorage.getItem(PENDING_BOOKING_STORAGE_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+
+    if (
+      !parsed ||
+      typeof parsed.arenaId !== 'string' ||
+      typeof parsed.modalityId !== 'string' ||
+      typeof parsed.courtId !== 'string' ||
+      typeof parsed.date !== 'string' ||
+      typeof parsed.hour !== 'string' ||
+      parsed.step !== 4
+    ) {
+      sessionStorage.removeItem(PENDING_BOOKING_STORAGE_KEY);
+      return null;
+    }
+
+    return parsed as PendingBooking;
+  } catch (error) {
+    console.error('Erro ao recuperar reserva pendente:', error);
+    sessionStorage.removeItem(PENDING_BOOKING_STORAGE_KEY);
+    return null;
+  }
+};
+
+const clearPendingBooking = () => {
+  sessionStorage.removeItem(PENDING_BOOKING_STORAGE_KEY);
+};
+
 export const ClientBookingPage: React.FC<ClientBookingPageProps> = ({
   onNavigate,
+  arenaSlug,
   preselectedModalityId,
   preselectedCourtId,
 }) => {
-  const { activeArena, user, profile, signIn, signUp } = useAuth();
+  const { activeArena: contextActiveArena, user, profile, signIn, signUp } = useAuth();
+
+  // Quando a reserva é aberta por /arena/:slug/reservar, a arena não
+  // necessariamente é a arena ativa do contexto do cliente. Nesse caso,
+  // carregamos a arena pelo slug e usamos essa arena durante todo o fluxo.
+  const [bookingArena, setBookingArena] = useState<typeof contextActiveArena>(null);
   
   // Data states
   const [modalities, setModalities] = useState<Modality[]>([]);
@@ -42,14 +93,32 @@ export const ClientBookingPage: React.FC<ClientBookingPageProps> = ({
   const [loading, setLoading] = useState(true);
 
   // Booking Flow Steps: 1 (Modality) -> 2 (Court) -> 3 (Date & Time) -> 4 (Summary & Confirm)
-  const [step, setStep] = useState<number>(1);
-  const [selectedModalityId, setSelectedModalityId] = useState<string>(preselectedModalityId || '');
-  const [selectedCourtId, setSelectedCourtId] = useState<string>(preselectedCourtId || '');
+  // A reserva em andamento é recuperada do sessionStorage para sobreviver
+  // ao remount causado pelo fluxo de autenticação.
+  const pendingBooking = getPendingBooking();
+
+  const [step, setStep] = useState<number>(() => (
+    pendingBooking?.step === 4 ? 4 : 1
+  ));
+
+  const [selectedModalityId, setSelectedModalityId] = useState<string>(
+    preselectedModalityId || pendingBooking?.modalityId || ''
+  );
+
+  const [selectedCourtId, setSelectedCourtId] = useState<string>(
+    preselectedCourtId || pendingBooking?.courtId || ''
+  );
+
   const [selectedDate, setSelectedDate] = useState<string>(() => {
+    if (pendingBooking?.date) return pendingBooking.date;
+
     const today = new Date();
     return today.toISOString().split('T')[0];
   });
-  const [selectedHour, setSelectedHour] = useState<string>('');
+
+  const [selectedHour, setSelectedHour] = useState<string>(
+    pendingBooking?.hour || ''
+  );
 
   // Authentication interceptor state
   const [authMode, setAuthMode] = useState<'LOGIN' | 'REGISTER'>('LOGIN');
@@ -67,19 +136,43 @@ export const ClientBookingPage: React.FC<ClientBookingPageProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [createdReservation, setCreatedReservation] = useState<Reservation | null>(null);
 
+  // Arena efetivamente utilizada pela reserva.
+  // Para /arena/:slug/reservar, usamos a arena encontrada pelo slug.
+  // Para /app/reservar, continuamos usando a arena ativa do contexto.
+  const activeArena = arenaSlug ? bookingArena : contextActiveArena;
+
   // Load Arena Data
   useEffect(() => {
-    if (!activeArena) return;
+    let cancelled = false;
+
     const loadData = async () => {
       setLoading(true);
       setError(null);
+
       try {
+        const targetArena = arenaSlug
+          ? await arenaService.getArenaBySlug(arenaSlug)
+          : contextActiveArena;
+
+        if (cancelled) return;
+
+        if (!targetArena) {
+          setBookingArena(null);
+          setError('Arena não encontrada ou indisponível para reservas.');
+          setLoading(false);
+          return;
+        }
+
+        setBookingArena(targetArena);
+
         const [loadedMods, loadedCourts, loadedRes, loadedBlocks] = await Promise.all([
-          arenaService.getModalities(activeArena.id),
-          arenaService.getCourts(activeArena.id),
-          arenaService.getReservations(activeArena.id),
-          arenaService.getCourtBlocks(activeArena.id),
+          arenaService.getModalities(targetArena.id),
+          arenaService.getCourts(targetArena.id),
+          arenaService.getReservations(targetArena.id),
+          arenaService.getCourtBlocks(targetArena.id),
         ]);
+
+        if (cancelled) return;
 
         const activeMods = loadedMods.filter(m => m.status === 'ACTIVE');
         const activeCrts = loadedCourts.filter(c => c.status === 'ACTIVE');
@@ -88,6 +181,32 @@ export const ClientBookingPage: React.FC<ClientBookingPageProps> = ({
         setCourts(activeCrts);
         setReservations(loadedRes);
         setCourtBlocks(loadedBlocks);
+
+        // Restaurar uma reserva que estava em andamento antes do cadastro/login.
+        const storedBooking = getPendingBooking();
+
+        if (storedBooking && storedBooking.arenaId === targetArena.id) {
+          const modalityExists = activeMods.some(
+            m => m.id === storedBooking.modalityId
+          );
+
+          const courtExists = activeCrts.some(
+            c =>
+              c.id === storedBooking.courtId &&
+              c.modality_id === storedBooking.modalityId
+          );
+
+          if (modalityExists && courtExists) {
+            setSelectedModalityId(storedBooking.modalityId);
+            setSelectedCourtId(storedBooking.courtId);
+            setSelectedDate(storedBooking.date);
+            setSelectedHour(storedBooking.hour);
+            setStep(4);
+          } else {
+            // A quadra/modalidade pode ter sido removida ou desativada.
+            clearPendingBooking();
+          }
+        }
 
         // Pre-selection handling
         if (preselectedModalityId && activeMods.some(m => m.id === preselectedModalityId)) {
@@ -109,7 +228,7 @@ export const ClientBookingPage: React.FC<ClientBookingPageProps> = ({
     };
 
     loadData();
-  }, [activeArena?.id]);
+  }, [arenaSlug, contextActiveArena?.id]);
 
   // Filter courts by active selected modality
   const filteredCourts = courts.filter(c => c.modality_id === selectedModalityId && c.status === 'ACTIVE');
@@ -146,7 +265,37 @@ export const ClientBookingPage: React.FC<ClientBookingPageProps> = ({
   const handleSelectSlot = (hour: string) => {
     setSelectedHour(hour);
     setError(null);
+
+    // Guarda a reserva em andamento antes de abrir o fluxo de autenticação.
+    // Isso evita perder modalidade/quadra/data/horário quando o AuthContext
+    // desmonta temporariamente a página durante login/cadastro.
+    if (activeArena && selectedModalityId && selectedCourtId) {
+      const bookingToPersist: PendingBooking = {
+        arenaId: activeArena.id,
+        modalityId: selectedModalityId,
+        courtId: selectedCourtId,
+        date: selectedDate,
+        hour,
+        step: 4,
+      };
+
+      sessionStorage.setItem(
+        PENDING_BOOKING_STORAGE_KEY,
+        JSON.stringify(bookingToPersist)
+      );
+    }
+
     setStep(4);
+
+    // Se o cliente ainda não estiver autenticado, a autenticação deve
+    // acontecer ANTES da confirmação final da reserva.
+    // A reserva já foi salva no sessionStorage acima, então podemos abrir
+    // o modal sem perder modalidade, quadra, data ou horário.
+    if (!user || !profile) {
+      setAuthMode('LOGIN');
+      setAuthError(null);
+      setShowAuthModal(true);
+    }
   };
 
   // Auth interceptor submit
@@ -167,7 +316,11 @@ export const ClientBookingPage: React.FC<ClientBookingPageProps> = ({
         }
         await signUp(authFullName, authEmail, authPassword, 'CLIENT');
       }
+      // O AuthContext pode desmontar/remontar esta página durante o cadastro/login.
+      // Os dados da reserva já foram persistidos em sessionStorage em handleSelectSlot,
+      // então, ao retornar, o passo 4 será restaurado automaticamente.
       setShowAuthModal(false);
+      setError(null);
     } catch (err: any) {
       setAuthError(err?.message || 'Falha na autenticação.');
     } finally {
@@ -240,6 +393,11 @@ export const ClientBookingPage: React.FC<ClientBookingPageProps> = ({
       });
 
       setCreatedReservation(newReservation);
+
+      // A reserva foi efetivamente criada. Agora podemos remover o
+      // estado temporário usado para atravessar o cadastro/login.
+      clearPendingBooking();
+
       setStep(5); // Success step
     } catch (err: any) {
       setError(err?.message || 'Erro ao processar reserva.');
@@ -333,6 +491,7 @@ export const ClientBookingPage: React.FC<ClientBookingPageProps> = ({
           <button
             id="book-another-btn"
             onClick={() => {
+              clearPendingBooking();
               setStep(1);
               setSelectedHour('');
               setCreatedReservation(null);
@@ -349,24 +508,39 @@ export const ClientBookingPage: React.FC<ClientBookingPageProps> = ({
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-fadeIn pb-8">
       {/* Top Breadcrumb & Step Navigator */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">Reservar Quadra</h1>
-          <p className="text-xs text-slate-400">
-            {activeArena?.name} • Agendamento online instantâneo
-          </p>
-        </div>
+      <div className="space-y-4">
 
-        {step > 1 && (
-          <button
-            id="booking-step-back-btn"
-            onClick={() => setStep(step - 1)}
-            className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 text-xs font-semibold hover:bg-slate-800 transition flex items-center gap-1 cursor-pointer"
-          >
-            <ChevronLeft className="w-3.5 h-3.5" />
-            <span>Voltar</span>
-          </button>
-        )}
+        {/* VOLTAR PARA ESCOLHA DE ARENA */}
+        <button
+          id="back-to-arena-selection-btn"
+          type="button"
+          onClick={() => onNavigate('/app/escolher-arena')}
+          className="inline-flex items-center gap-2 text-xs font-bold text-slate-400 hover:text-emerald-400 transition cursor-pointer"
+        >
+          <ChevronLeft className="w-4 h-4" />
+          <span>Voltar para arenas</span>
+        </button>
+
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">Reservar Quadra</h1>
+            <p className="text-xs text-slate-400">
+              {activeArena?.name} • Agendamento online instantâneo
+            </p>
+          </div>
+
+          {step > 1 && (
+            <button
+              id="booking-step-back-btn"
+              type="button"
+              onClick={() => setStep(step - 1)}
+              className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 text-xs font-semibold hover:bg-slate-800 transition flex items-center gap-1 cursor-pointer"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span>Voltar</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Step Indicators */}

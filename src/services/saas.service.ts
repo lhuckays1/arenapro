@@ -46,13 +46,68 @@ export const saasService = {
 
   async getSubscription(arenaId: string): Promise<ArenaSubscription | null> {
     if (!isSupabaseConfigured) return null;
-    const { data, error } = await supabase
+
+    // ==========================================================
+    // 1. BUSCAR A ASSINATURA
+    // ==========================================================
+
+    const { data: subscription, error: subscriptionError } = await supabase
       .from('arena_subscriptions')
-      .select('*, plan:subscription_plans(*)')
+      .select('*')
       .eq('arena_id', arenaId)
       .maybeSingle();
-    if (error) throw error;
-    return data as ArenaSubscription | null;
+
+    if (subscriptionError) {
+      console.error(
+        '[SaaS] Erro ao buscar assinatura:',
+        subscriptionError
+      );
+
+      throw subscriptionError;
+    }
+
+    if (!subscription) {
+      console.warn(
+        '[SaaS] Nenhuma assinatura encontrada para a arena:',
+        arenaId
+      );
+
+      return null;
+    }
+
+    // ==========================================================
+    // 2. BUSCAR O PLANO SE EXISTIR plan_id
+    // ==========================================================
+
+    let plan: SubscriptionPlan | null = null;
+
+    if (subscription.plan_id) {
+      const { data: planData, error: planError } = await supabase
+        .from('subscription_plans')
+        .select('*')
+        .eq('id', subscription.plan_id)
+        .maybeSingle();
+
+      if (planError) {
+        console.error(
+          '[SaaS] Erro ao buscar plano:',
+          planError
+        );
+
+        throw planError;
+      }
+
+      plan = planData as SubscriptionPlan | null;
+    }
+
+    // ==========================================================
+    // 3. RETORNAR OBJETO COMPLETO
+    // ==========================================================
+
+    return {
+      ...subscription,
+      plan,
+    } as ArenaSubscription;
   },
 
   async createArenaOwner(payload: CreateArenaOwnerPayload) {

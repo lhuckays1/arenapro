@@ -86,13 +86,15 @@ export const PublicArenaPortalPage: React.FC<PublicArenaPortalPageProps> = ({
   }, [slug, activeArena?.id]);
 
   const handleStartBooking = (modalityId?: string, courtId?: string) => {
-    if (arena) {
-      setActiveArena(arena);
-      if (onSelectBooking) {
-        onSelectBooking(arena.id, modalityId, courtId);
-      }
+    if (!arena) return;
+
+    setActiveArena(arena);
+
+    if (onSelectBooking) {
+      onSelectBooking(arena.id, modalityId, courtId);
     }
-    onNavigate('/app/reservar');
+
+    onNavigate(`/arena/${arena.slug}/reservar`);
   };
 
   if (loading) {
