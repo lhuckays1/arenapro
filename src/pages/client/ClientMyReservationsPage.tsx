@@ -49,16 +49,31 @@ export const ClientMyReservationsPage: React.FC<ClientMyReservationsPageProps> =
     loadReservations();
   }, [user?.id, activeArena?.id]);
 
-  const nowIso = new Date().toISOString();
+  const now = Date.now();
 
-  // Split into Upcoming and History
-  const upcomingReservations = reservations.filter(
-    r => r.end_at >= nowIso && (r.status === 'CONFIRMED' || r.status === 'PENDING')
-  );
+  // Split into Upcoming and History.
+  // A reservation is considered "upcoming" until its start time.
+  // We compare timestamps as Date values to avoid fragile string comparisons
+  // and to keep the logic aligned with the timezone-aware reservation data.
+  const upcomingReservations = reservations.filter((r) => {
+    const startAt = new Date(r.start_at).getTime();
 
-  const historyReservations = reservations.filter(
-    r => r.end_at < nowIso || r.status === 'COMPLETED' || r.status === 'CANCELLED' || r.status === 'NO_SHOW'
-  );
+    return (
+      startAt >= now &&
+      (r.status === 'CONFIRMED' || r.status === 'PENDING')
+    );
+  });
+
+  const historyReservations = reservations.filter((r) => {
+    const startAt = new Date(r.start_at).getTime();
+
+    return (
+      startAt < now ||
+      r.status === 'COMPLETED' ||
+      r.status === 'CANCELLED' ||
+      r.status === 'NO_SHOW'
+    );
+  });
 
   const displayList = tab === 'UPCOMING' ? upcomingReservations : historyReservations;
 
@@ -114,7 +129,7 @@ export const ClientMyReservationsPage: React.FC<ClientMyReservationsPageProps> =
         </div>
 
         <button
-          onClick={() => onNavigate('/app/reservar')}
+          onClick={() => onNavigate('/app/escolher-arena')}
           className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition flex items-center gap-1.5 shadow-md shadow-emerald-500/20 cursor-pointer"
         >
           <CalendarDays className="w-3.5 h-3.5" />
@@ -181,7 +196,7 @@ export const ClientMyReservationsPage: React.FC<ClientMyReservationsPageProps> =
           {tab === 'UPCOMING' && (
             <div className="pt-2">
               <button
-                onClick={() => onNavigate('/app/reservar')}
+                onClick={() => onNavigate('/app/escolher-arena')}
                 className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-emerald-500/20 transition cursor-pointer"
               >
                 Agendar Minha Primeira Partida

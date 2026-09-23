@@ -624,6 +624,58 @@ export const arenaService = {
     return false;
   },
 
+  /**
+   * Retorna somente os dados necessários para disponibilidade pública.
+   *
+   * IMPORTANTE:
+   * Clientes não devem receber a linha completa de `reservations`, pois
+   * ela contém dados do cliente/reserva. A função SQL pública devolve apenas
+   * court_id, start_at, end_at e status.
+   */
+  async getPublicCourtAvailability(
+    arenaId: string,
+    dateStr?: string
+  ): Promise<Array<{
+    court_id: string;
+    start_at: string;
+    end_at: string;
+    status: Reservation['status'];
+  }>> {
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.rpc(
+        'get_public_court_availability',
+        {
+          p_arena_id: arenaId,
+          p_date: dateStr || null,
+        }
+      );
+
+      if (error) throw error;
+
+      return (data || []) as Array<{
+        court_id: string;
+        start_at: string;
+        end_at: string;
+        status: Reservation['status'];
+      }>;
+    }
+
+    const allReservations = sandboxDB.getReservations(arenaId);
+
+    return allReservations
+      .filter(r => {
+        if (r.status === 'CANCELLED' || r.status === 'NO_SHOW') return false;
+        if (!dateStr) return true;
+        return r.start_at.slice(0, 10) === dateStr;
+      })
+      .map(r => ({
+        court_id: r.court_id,
+        start_at: r.start_at,
+        end_at: r.end_at,
+        status: r.status,
+      }));
+  },
+
   // 8. CLIENT RESERVATIONS & CANCELLATIONS
   async getClientReservations(userId: string, arenaId?: string): Promise<Reservation[]> {
     if (isSupabaseConfigured) {
@@ -1361,33 +1413,8 @@ export const arenaService = {
     }
 
     const cleanPaymentAmount = Math.round(Number(params.amount) * 100) / 100;
-
-    let reservation: Reservation | null = null;
-
-    if (isSupabaseConfigured) {
-      const { data, error } = await supabase
-        .from('reservations')
-        .select('*, court:courts(*), customer:customers(*)')
-        .eq('id', params.reservationId)
-        .maybeSingle();
-
-      if (error) throw error;
-      reservation = data || null;
-    } else {
-      const allArenas = sandboxDB.getArenas();
-
-      for (const arena of allArenas) {
-        const found = sandboxDB
-          .getReservations(arena.id)
-          .find(r => r.id === params.reservationId);
-
-        if (found) {
-          reservation = found;
-          break;
-        }
-      }
-    }
-
+    const allReservations = await this.getReservations('');
+    const reservation = allReservations.find(r => r.id === params.reservationId);
     if (!reservation) {
       throw new Error('Reserva não encontrada para registrar pagamento.');
     }
@@ -1418,11 +1445,7 @@ export const arenaService = {
       customer_id: reservation.customer_id,
       status: 'COMPLETED',
       notes: params.notes || `Pagamento ${newPaymentStatus === 'PAID' ? 'Total' : 'Parcial'} (${params.paymentMethod})`,
-      created_by: params.createdBy || (
-        isSupabaseConfigured
-          ? (await supabase.auth.getUser()).data.user?.id
-          : undefined
-      ),
+      created_by: params.createdBy || 'u-admin-xp',
     });
 
     // 2. Update reservation status & payment method
@@ -1463,135 +1486,6 @@ export const arenaService = {
     }
 
     return pendingItems.sort((a, b) => new Date(b.reservation.start_at).getTime() - new Date(a.reservation.start_at).getTime());
-  },
-
-  calculateDateRange(
-    period: PeriodFilter = 'MONTH',
-    customStart?: string,
-    customEnd?: string
-  ): {
-    startDate: string;
-    endDate: string;
-  } {
-    const formatDate = (date: Date): string => {
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    };
-
-    const today = new Date();
-    const todayStr = formatDate(today);
-    const normalizedPeriod = String(period);
-
-    if (normalizedPeriod === 'TODAY') {
-      return {
-        startDate: todayStr,
-        endDate: todayStr,
-      };
-    }
-
-    if (normalizedPeriod === '7_DAYS') {
-      const start = new Date(today);
-      start.setDate(today.getDate() - 6);
-
-      return {
-        startDate: formatDate(start),
-        endDate: todayStr,
-      };
-    }
-
-    if (normalizedPeriod === '30_DAYS') {
-      const start = new Date(today);
-      start.setDate(today.getDate() - 29);
-
-      return {
-        startDate: formatDate(start),
-        endDate: todayStr,
-      };
-    }
-
-    if (normalizedPeriod === 'WEEK') {
-      const start = new Date(today);
-      const day = start.getDay();
-      const diff = day === 0 ? -6 : 1 - day;
-
-      start.setDate(start.getDate() + diff);
-
-      const end = new Date(start);
-      end.setDate(start.getDate() + 6);
-
-      return {
-        startDate: formatDate(start),
-        endDate: formatDate(end),
-      };
-    }
-
-    if (normalizedPeriod === 'MONTH') {
-      const start = new Date(
-        today.getFullYear(),
-        today.getMonth(),
-        1
-      );
-
-      const end = new Date(
-        today.getFullYear(),
-        today.getMonth() + 1,
-        0
-      );
-
-      return {
-        startDate: formatDate(start),
-        endDate: formatDate(end),
-      };
-    }
-
-    if (normalizedPeriod === 'YEAR') {
-      const start = new Date(
-        today.getFullYear(),
-        0,
-        1
-      );
-
-      const end = new Date(
-        today.getFullYear(),
-        11,
-        31
-      );
-
-      return {
-        startDate: formatDate(start),
-        endDate: formatDate(end),
-      };
-    }
-
-    if (normalizedPeriod === 'ALL') {
-      return {
-        startDate: '2000-01-01',
-        endDate: '2099-12-31',
-      };
-    }
-
-    if (normalizedPeriod === 'CUSTOM') {
-      let startDate = customStart || todayStr;
-      let endDate = customEnd || todayStr;
-
-      if (startDate > endDate) {
-        const temp = startDate;
-        startDate = endDate;
-        endDate = temp;
-      }
-
-      return {
-        startDate,
-        endDate,
-      };
-    }
-
-    return {
-      startDate: todayStr,
-      endDate: todayStr,
-    };
   },
 
   async getFinancialSummary(
