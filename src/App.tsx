@@ -10,6 +10,7 @@ import { PublicHomePage } from './pages/client/PublicHomePage';
 import { LoginPage } from './pages/auth/LoginPage';
 import { RegisterPage } from './pages/auth/RegisterPage';
 import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
+import { ResetPasswordPage } from './pages/auth/ResetPasswordPage';
 
 // ============================================================
 // ADMIN PAGES
@@ -310,6 +311,22 @@ const AppContent: React.FC = () => {
     );
   }
 
+
+  // ==========================================================
+  // RECUPERAÇÃO DE SENHA
+  //
+  // A rota precisa existir antes das rotas autenticadas e não
+  // depende do profile/role. O link do Supabase cria uma sessão
+  // temporária de recuperação.
+  // ==========================================================
+
+  if (currentPath === '/reset-password') {
+    return (
+      <ResetPasswordPage
+        onNavigate={navigate}
+      />
+    );
+  }
 
   // ==========================================================
   // USUÁRIO NÃO AUTENTICADO

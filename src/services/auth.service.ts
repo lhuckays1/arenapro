@@ -416,9 +416,14 @@ export const authService = {
     email: string
   ): Promise<void> {
     if (isSupabaseConfigured) {
+      const redirectTo = `${window.location.origin}/reset-password`;
+
       const { error } =
         await supabase.auth.resetPasswordForEmail(
-          email
+          email,
+          {
+            redirectTo,
+          }
         );
 
       if (error) {
@@ -429,6 +434,32 @@ export const authService = {
         setTimeout(resolve, 800)
       );
     }
+  },
+
+  // ==========================================================
+  // ATUALIZAR SENHA APÓS RECUPERAÇÃO
+  // ==========================================================
+
+  async updatePassword(
+    newPassword: string
+  ): Promise<void> {
+    if (isSupabaseConfigured) {
+      const { error } =
+        await supabase.auth.updateUser({
+          password: newPassword,
+        });
+
+      if (error) {
+        throw error;
+      }
+
+      return;
+    }
+
+    // Sandbox
+    await new Promise(resolve =>
+      setTimeout(resolve, 500)
+    );
   },
 
   // ==========================================================
