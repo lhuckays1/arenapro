@@ -32,6 +32,15 @@ export const ClientLayout: React.FC<ClientLayoutProps> = ({ currentPath, onNavig
 
   const canAccessAdmin = profile?.role === 'SUPER_ADMIN' || profile?.role === 'ARENA_ADMIN' || profile?.role === 'ARENA_STAFF';
 
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      onNavigate('/');
+    } catch (error) {
+      console.error('Erro ao sair:', error);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col pb-20 md:pb-0">
       {/* Top Testing Persona Switcher Bar */}
@@ -106,7 +115,9 @@ export const ClientLayout: React.FC<ClientLayoutProps> = ({ currentPath, onNavig
             )}
 
             <button
-              onClick={signOut}
+              id="client-logout-btn"
+              type="button"
+              onClick={handleLogout}
               title="Sair"
               className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-rose-400 hover:bg-slate-700 transition cursor-pointer"
             >
