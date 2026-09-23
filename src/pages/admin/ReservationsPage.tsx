@@ -27,9 +27,12 @@ export const ReservationsPage: React.FC<{ onNavigate: (path: string) => void }> 
   const [courts, setCourts] = useState<Court[]>([]);
   const [modalities, setModalities] = useState<Modality[]>([]);
   
-  // Payment Modal state
+  // Reservation action / payment modal state
+  const [isReservationActionOpen, setIsReservationActionOpen] = useState(false);
+  const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [selectedResForPayment, setSelectedResForPayment] = useState<Reservation | null>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -133,21 +136,46 @@ export const ReservationsPage: React.FC<{ onNavigate: (path: string) => void }> 
     return { totalCount, validCount, totalRevenue, paidRevenue, pendingRevenue };
   }, [filtered]);
 
-  // Quick Action: Open Record Payment Modal
+  // Abre o modal de ações ao tocar/clicar em qualquer reserva.
+  const handleOpenReservation = (r: Reservation) => {
+    setSelectedReservation(r);
+    setIsReservationActionOpen(true);
+  };
+
+  // Abre o modal financeiro já com a reserva selecionada.
   const handleMarkAsPaid = (r: Reservation) => {
     setSelectedResForPayment(r);
+    setIsReservationActionOpen(false);
     setIsPaymentModalOpen(true);
   };
 
-  // Quick Action: Cancel
+  // Cancelamento feito dentro do modal da reserva.
   const handleCancel = async (r: Reservation) => {
-    if (!activeArena) return;
+    if (!activeArena || isCancelling) return;
+
+    setIsCancelling(true);
     try {
-      await arenaService.updateReservation(r.id, { status: 'CANCELLED' }, activeArena.id);
-      setActionFeedback({ type: 'success', message: 'Reserva cancelada com sucesso.' });
+      await arenaService.updateReservation(
+        r.id,
+        { status: 'CANCELLED' },
+        activeArena.id
+      );
+
+      setActionFeedback({
+        type: 'success',
+        message: 'Reserva cancelada com sucesso.',
+      });
+
+      setIsReservationActionOpen(false);
+      setSelectedReservation(null);
       await loadData();
     } catch (err: any) {
-      setActionFeedback({ type: 'error', message: err?.message || 'Erro ao cancelar reserva.' });
+      setActionFeedback({
+        type: 'error',
+        message: err?.message || 'Erro ao cancelar reserva.',
+      });
+    } finally {
+      setIsCancelling(false);
     }
   };
 
@@ -395,7 +423,12 @@ export const ReservationsPage: React.FC<{ onNavigate: (path: string) => void }> 
                   const isCancelled = res.status === 'CANCELLED';
 
                   return (
-                    <tr key={res.id} className="hover:bg-slate-800/40 transition">
+                    <tr
+                      key={res.id}
+                      onClick={() => handleOpenReservation(res)}
+                      className="hover:bg-slate-800/50 active:bg-slate-800/70 transition cursor-pointer"
+                      title="Clique para abrir os detalhes e ações da reserva"
+                    >
                       <td className="px-5 py-3.5">
                         <div className="font-bold text-slate-100">{res.customer?.full_name || 'Cliente'}</div>
                         <div className="text-[11px] text-slate-400">{res.customer?.phone}</div>
@@ -443,7 +476,10 @@ export const ReservationsPage: React.FC<{ onNavigate: (path: string) => void }> 
                         <div className="flex items-center justify-end gap-1.5">
                           {!isPaid && !isCancelled && (
                             <button
-                              onClick={() => handleMarkAsPaid(res)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleMarkAsPaid(res);
+                              }}
                               className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-[11px] font-bold transition cursor-pointer"
                               title="Marcar como Pago"
                             >
@@ -452,7 +488,10 @@ export const ReservationsPage: React.FC<{ onNavigate: (path: string) => void }> 
                           )}
                           {!isCancelled && res.status !== 'COMPLETED' && (
                             <button
-                              onClick={() => handleCancel(res)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCancel(res);
+                              }}
                               className="px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[11px] font-bold transition cursor-pointer"
                               title="Cancelar Reserva"
                             >
@@ -470,6 +509,172 @@ export const ReservationsPage: React.FC<{ onNavigate: (path: string) => void }> 
         </div>
       </div>
 
+      {/* Reservation Action Modal */}
+      {isReservationActionOpen && selectedReservation && (
+        <div
+          className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-slate-950/80 backdrop-blur-sm p-0 sm:p-4"
+          onClick={() => {
+            if (!isCancelling) {
+              setIsReservationActionOpen(false);
+              setSelectedReservation(null);
+            }
+          }}
+        >
+          <div
+            className="w-full sm:max-w-lg bg-slate-900 border border-slate-700 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden animate-fadeIn"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-800 flex items-start justify-between gap-4">
+              <div>
+                <div className="text-[11px] uppercase tracking-wider font-bold text-emerald-400">
+                  Detalhes da reserva
+                </div>
+                <h2 className="text-xl font-black text-white mt-1">
+                  {selectedReservation.customer?.full_name || 'Cliente'}
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  {selectedReservation.customer?.phone || 'Telefone não informado'}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsReservationActionOpen(false);
+                  setSelectedReservation(null);
+                }}
+                className="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition cursor-pointer"
+                aria-label="Fechar"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Reservation Details */}
+            <div className="p-5 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-2xl bg-slate-950/70 border border-slate-800 p-3">
+                  <div className="text-[10px] uppercase font-bold text-slate-500">Quadra</div>
+                  <div className="text-sm font-bold text-white mt-1">
+                    {selectedReservation.court?.name || '—'}
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    {selectedReservation.court?.modality?.name || '—'}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl bg-slate-950/70 border border-slate-800 p-3">
+                  <div className="text-[10px] uppercase font-bold text-slate-500">Data</div>
+                  <div className="text-sm font-bold text-white mt-1">
+                    {new Date(selectedReservation.start_at).toLocaleDateString('pt-BR')}
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    {new Date(selectedReservation.start_at).toLocaleTimeString('pt-BR', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}{' '}
+                    às{' '}
+                    {new Date(selectedReservation.end_at).toLocaleTimeString('pt-BR', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-slate-950/70 border border-slate-800 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] uppercase font-bold text-slate-500">Valor</div>
+                    <div className="text-2xl font-black text-white mt-1">
+                      R$ {selectedReservation.amount.toLocaleString('pt-BR', {
+                        minimumFractionDigits: 2,
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <div className="text-[10px] uppercase font-bold text-slate-500">Pagamento</div>
+                    <div className={`mt-1 inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                      selectedReservation.payment_status === 'PAID'
+                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                        : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                    }`}>
+                      {selectedReservation.payment_status === 'PAID' ? 'PAGO' : 'PENDENTE'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between rounded-2xl bg-slate-950/70 border border-slate-800 px-4 py-3">
+                <span className="text-xs font-semibold text-slate-400">Status da reserva</span>
+                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                  selectedReservation.status === 'CONFIRMED'
+                    ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                    : selectedReservation.status === 'COMPLETED'
+                    ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                    : selectedReservation.status === 'PENDING'
+                    ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                    : 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
+                }`}>
+                  {selectedReservation.status}
+                </span>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="p-5 pt-1 border-t border-slate-800 bg-slate-900">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4">
+                {selectedReservation.payment_status !== 'PAID' &&
+                  selectedReservation.status !== 'CANCELLED' && (
+                    <button
+                      type="button"
+                      onClick={() => handleMarkAsPaid(selectedReservation)}
+                      className="min-h-12 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm flex items-center justify-center gap-2 transition cursor-pointer shadow-lg shadow-emerald-500/20"
+                    >
+                      <CheckCircle2 className="w-5 h-5" />
+                      Confirmar pagamento
+                    </button>
+                  )}
+
+                {selectedReservation.status !== 'CANCELLED' &&
+                  selectedReservation.status !== 'COMPLETED' && (
+                    <button
+                      type="button"
+                      onClick={() => handleCancel(selectedReservation)}
+                      disabled={isCancelling}
+                      className="min-h-12 rounded-2xl bg-rose-500/10 hover:bg-rose-500/20 disabled:opacity-60 text-rose-300 border border-rose-500/30 font-black text-sm flex items-center justify-center gap-2 transition cursor-pointer"
+                    >
+                      <XCircle className="w-5 h-5" />
+                      {isCancelling ? 'Cancelando...' : 'Cancelar reserva'}
+                    </button>
+                  )}
+              </div>
+
+              {selectedReservation.payment_status === 'PAID' &&
+                selectedReservation.status !== 'CANCELLED' && (
+                  <div className="mt-3 text-center text-xs text-emerald-400 font-semibold">
+                    Pagamento já registrado.
+                  </div>
+                )}
+
+              {selectedReservation.status === 'CANCELLED' && (
+                <div className="mt-3 text-center text-xs text-rose-300 font-semibold">
+                  Esta reserva já está cancelada.
+                </div>
+              )}
+
+              {selectedReservation.status === 'COMPLETED' && (
+                <div className="mt-3 text-center text-xs text-blue-300 font-semibold">
+                  Esta reserva já foi concluída.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Record Payment Modal */}
       <RecordPaymentModal
         isOpen={isPaymentModalOpen}
@@ -479,7 +684,12 @@ export const ReservationsPage: React.FC<{ onNavigate: (path: string) => void }> 
         }}
         reservation={selectedResForPayment}
         onPaymentSuccess={() => {
-          setActionFeedback({ type: 'success', message: 'Pagamento registrado no caixa com sucesso!' });
+          setActionFeedback({
+            type: 'success',
+            message: 'Pagamento registrado no caixa com sucesso!',
+          });
+          setIsPaymentModalOpen(false);
+          setSelectedResForPayment(null);
           loadData();
         }}
       />
