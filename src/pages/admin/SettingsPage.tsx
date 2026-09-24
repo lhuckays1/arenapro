@@ -57,6 +57,7 @@ export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = ()
         name: activeArena.name || '',
         slug: activeArena.slug || '',
         description: activeArena.description || '',
+        logo_url: activeArena.logo_url || '',
         phone: activeArena.phone || '',
         whatsapp: activeArena.whatsapp || '',
         email: activeArena.email || '',
@@ -68,6 +69,8 @@ export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = ()
         closing_time: activeArena.closing_time || '23:00',
         cancellation_limit_hours: activeArena.cancellation_limit_hours || 2,
       });
+
+      setLogoUrlInput(activeArena.logo_url || '');
     }
   }, [activeArena]);
 
