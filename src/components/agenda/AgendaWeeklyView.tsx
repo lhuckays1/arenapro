@@ -433,7 +433,7 @@ export const AgendaWeeklyView: React.FC<
                                 ? 'Concluída'
                                 : reservation.status ===
                                   'NO_SHOW'
-                                ? 'No-show'
+                                ? 'Não compareceu'
                                 : reservation.status ===
                                   'CANCELLED'
                                 ? 'Cancelada'

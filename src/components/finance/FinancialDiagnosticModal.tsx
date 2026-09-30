@@ -30,6 +30,8 @@ interface TestResult {
   details?: string;
 }
 
+import { translatePaymentStatus } from '../../utils/translation';
+
 export const FinancialDiagnosticModal: React.FC<FinancialDiagnosticModalProps> = ({
   isOpen,
   onClose,
@@ -187,10 +189,10 @@ export const FinancialDiagnosticModal: React.FC<FinancialDiagnosticModalProps> =
               notes: 'Teste Diagnóstico F3 - Pagamento Parcial',
             });
             if (res.reservation.payment_status !== 'PARTIAL' && res.reservation.payment_status !== 'PAID') {
-              throw new Error(`Status da reserva esperado PARTIAL/PAID, obtido: ${res.reservation.payment_status}`);
+              throw new Error(`Status da reserva esperado PARTIAL/PAID, obtido: ${translatePaymentStatus(res.reservation.payment_status)}`);
             }
             test.status = 'PASSED';
-            test.message = `Pagamento parcial de R$ ${halfAmount.toFixed(2)} registrado com sucesso. Status: ${res.reservation.payment_status}`;
+            test.message = `Pagamento parcial de R$ ${halfAmount.toFixed(2)} registrado com sucesso. Status: ${translatePaymentStatus(res.reservation.payment_status)}`;
           }
         }
         else if (test.id === 'F4') {

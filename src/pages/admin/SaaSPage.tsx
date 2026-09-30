@@ -31,6 +31,8 @@ const emptyForm = {
   planId: '',
 };
 
+import { translateSubscriptionStatus } from '../../utils/translation';
+
 export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
   const { setActiveArena } = useAuth();
   const [arenas, setArenas] = useState<Arena[]>([]);
@@ -150,7 +152,7 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
         type: 'success',
         message: status === 'ACTIVE'
           ? 'Assinatura ativada. O proprietário já pode acessar o painel.'
-          : `Assinatura alterada para ${status}.`,
+          : `Assinatura alterada para ${translateSubscriptionStatus(status)}.`,
       });
       await load();
     } catch (error: any) {

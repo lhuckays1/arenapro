@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { arenaService } from '../../services/arena.service';
 import { Reservation, Arena } from '../../types';
+import { formatArenaDate, formatArenaTime } from '../../utils/agendaDate';
 import {
   CalendarDays,
   Clock,
@@ -20,6 +21,8 @@ import {
 interface ClientMyReservationsPageProps {
   onNavigate: (path: string) => void;
 }
+
+import { translateReservationStatus } from '../../utils/translation';
 
 export const ClientMyReservationsPage: React.FC<ClientMyReservationsPageProps> = ({ onNavigate }) => {
   const { user, activeArena, arenas } = useAuth();
@@ -208,16 +211,9 @@ export const ClientMyReservationsPage: React.FC<ClientMyReservationsPageProps> =
         <div className="space-y-3.5">
           {displayList.map((res) => {
             const resArena = arenas.find(a => a.id === res.arena_id) || activeArena;
-            const startDate = new Date(res.start_at);
-            const endDate = new Date(res.end_at);
-            const dateFormatted = startDate.toLocaleDateString('pt-BR', {
-              weekday: 'short',
-              day: '2-digit',
-              month: 'short',
-              year: 'numeric'
-            });
-            const startHourStr = startDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-            const endHourStr = endDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            const dateFormatted = formatArenaDate(res.start_at);
+            const startHourStr = formatArenaTime(res.start_at);
+            const endHourStr = formatArenaTime(res.end_at);
 
             const cancelCheck = resArena
               ? arenaService.canCancelReservation(res, resArena)
@@ -241,7 +237,7 @@ export const ClientMyReservationsPage: React.FC<ClientMyReservationsPageProps> =
                         ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
                         : 'bg-slate-800 text-slate-300'
                     }`}>
-                      {res.status === 'CONFIRMED' ? 'Confirmada' : res.status === 'CANCELLED' ? 'Cancelada' : res.status}
+                      {translateReservationStatus(res.status)}
                     </span>
 
                     <span className="text-[11px] font-semibold text-slate-400">
@@ -329,8 +325,7 @@ export const ClientMyReservationsPage: React.FC<ClientMyReservationsPageProps> =
               <div className="flex justify-between">
                 <span className="text-slate-400">Data &amp; Horário:</span>
                 <span className="font-bold text-white">
-                  {new Date(selectedResForCancel.start_at).toLocaleDateString('pt-BR')} às{' '}
-                  {new Date(selectedResForCancel.start_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                  {formatArenaDate(selectedResForCancel.start_at)} às {formatArenaTime(selectedResForCancel.start_at)}
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 pt-1">

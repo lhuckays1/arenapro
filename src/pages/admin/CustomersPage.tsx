@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { arenaService } from '../../services/arena.service';
 import { CustomerWithMetrics, Reservation } from '../../types';
+import { formatArenaDate, formatArenaTime } from '../../utils/agendaDate';
 import { 
   Users, 
   Search, 
@@ -392,9 +393,9 @@ export const CustomersPage: React.FC<{ onNavigate: (path: string) => void }> = (
               ) : (
                 <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                   {selectedCustomer.reservations.map((res) => {
-                    const dateStr = new Date(res.start_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
-                    const timeStart = new Date(res.start_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-                    const timeEnd = new Date(res.end_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                    const dateStr = formatArenaDate(res.start_at);
+                    const timeStart = formatArenaTime(res.start_at);
+                    const timeEnd = formatArenaTime(res.end_at);
                     const isPaid = res.payment_status === 'PAID';
                     const isCancelled = res.status === 'CANCELLED';
 

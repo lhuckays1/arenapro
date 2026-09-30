@@ -20,6 +20,8 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { RecordPaymentModal } from '../../components/finance/RecordPaymentModal';
+import { formatArenaDate, formatArenaTime } from '../../utils/agendaDate';
+import { translatePaymentMethod, translatePaymentStatus, translateReservationStatus } from '../../utils/translation';
 
 export const ReservationsPage: React.FC<{ onNavigate: (path: string) => void }> = ({ onNavigate }) => {
   const { activeArena, user } = useAuth();
@@ -416,9 +418,9 @@ export const ReservationsPage: React.FC<{ onNavigate: (path: string) => void }> 
                 </tr>
               ) : (
                 filtered.map((res) => {
-                  const startTime = new Date(res.start_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-                  const endTime = new Date(res.end_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-                  const dateFormatted = new Date(res.start_at).toLocaleDateString('pt-BR');
+                  const startTime = formatArenaTime(res.start_at);
+                  const endTime = formatArenaTime(res.end_at);
+                  const dateFormatted = formatArenaDate(res.start_at);
                   const isPaid = res.payment_status === 'PAID';
                   const isCancelled = res.status === 'CANCELLED';
 
@@ -458,7 +460,7 @@ export const ReservationsPage: React.FC<{ onNavigate: (path: string) => void }> 
                             ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
                             : 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
                         }`}>
-                          {res.status}
+                          {translateReservationStatus(res.status)}
                         </span>
                       </td>
 
@@ -468,7 +470,7 @@ export const ReservationsPage: React.FC<{ onNavigate: (path: string) => void }> 
                             ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
                             : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
                         }`}>
-                          {res.payment_status} ({res.payment_method || 'PIX'})
+                          {translatePaymentStatus(res.payment_status)} ({translatePaymentMethod(res.payment_method || 'PIX')})
                         </span>
                       </td>
 
@@ -567,18 +569,12 @@ export const ReservationsPage: React.FC<{ onNavigate: (path: string) => void }> 
                 <div className="rounded-2xl bg-slate-950/70 border border-slate-800 p-3">
                   <div className="text-[10px] uppercase font-bold text-slate-500">Data</div>
                   <div className="text-sm font-bold text-white mt-1">
-                    {new Date(selectedReservation.start_at).toLocaleDateString('pt-BR')}
+                    {formatArenaDate(selectedReservation.start_at)}
                   </div>
                   <div className="text-[11px] text-slate-400 mt-0.5">
-                    {new Date(selectedReservation.start_at).toLocaleTimeString('pt-BR', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}{' '}
+                    {formatArenaTime(selectedReservation.start_at)}{' '}
                     às{' '}
-                    {new Date(selectedReservation.end_at).toLocaleTimeString('pt-BR', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
+                    {formatArenaTime(selectedReservation.end_at)}
                   </div>
                 </div>
               </div>
@@ -618,7 +614,7 @@ export const ReservationsPage: React.FC<{ onNavigate: (path: string) => void }> 
                     ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
                     : 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
                 }`}>
-                  {selectedReservation.status}
+                  {translateReservationStatus(selectedReservation.status)}
                 </span>
               </div>
             </div>

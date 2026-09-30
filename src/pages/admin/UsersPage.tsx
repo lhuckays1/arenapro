@@ -75,7 +75,7 @@ interface PlatformUser {
 ========================================================== */
 
 const roleLabels: Record<string, string> = {
-  SUPER_ADMIN: 'Super Admin',
+  SUPER_ADMIN: 'Super Administrador',
   ARENA_ADMIN: 'Admin da Arena',
   ARENA_STAFF: 'Funcionário',
   CLIENT: 'Cliente',

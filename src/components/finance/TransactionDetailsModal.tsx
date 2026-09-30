@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { FinancialTransaction } from '../../types';
 import { arenaService } from '../../services/arena.service';
+import { translateFinancialStatus, translatePaymentMethod } from '../../utils/translation';
 
 interface TransactionDetailsModalProps {
   isOpen: boolean;
@@ -165,7 +166,7 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
               Forma de Pagamento
             </span>
             <span className="font-semibold text-white">
-              {paymentLabels[transaction.payment_method] || transaction.payment_method}
+              {translatePaymentMethod(transaction.payment_method)}
             </span>
           </div>
 

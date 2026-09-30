@@ -18,6 +18,8 @@ import {
   Ban
 } from 'lucide-react';
 
+import { translateEntityStatus } from '../../utils/translation';
+
 export const CourtsPage: React.FC<{ onNavigate: (path: string) => void }> = () => {
   const { activeArena, profile } = useAuth();
   const isArenaAdmin = profile?.role === 'ARENA_ADMIN' || profile?.role === 'SUPER_ADMIN';
@@ -188,7 +190,7 @@ export const CourtsPage: React.FC<{ onNavigate: (path: string) => void }> = () =
     try {
       await arenaService.updateCourt(court.id, { status: nextStatus });
       await loadData();
-      setNotification({ type: 'success', message: `Status de "${court.name}" alterado para ${nextStatus}.` });
+      setNotification({ type: 'success', message: `Status de "${court.name}" alterado para ${translateEntityStatus(nextStatus)}.` });
       setTimeout(() => setNotification(null), 3000);
     } catch (err: any) {
       setNotification({ type: 'error', message: err.message || 'Erro ao atualizar status.' });

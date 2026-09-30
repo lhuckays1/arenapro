@@ -22,6 +22,8 @@ import {
 } from 'lucide-react';
 import { Arena } from '../../types';
 
+import { userRoleLabels } from '../../utils/translation';
+
 export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = () => {
   const { activeArena, setActiveArena, profile, isConfigured } = useAuth();
   
@@ -230,7 +232,7 @@ export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = ()
           <div>
             <p className="font-semibold">Modo de visualização (Apenas Leitura)</p>
             <p className="text-amber-400/80 mt-0.5">
-              Seu perfil atual ({profile?.role}) possui permissão de leitura. Apenas administradores (ARENA_ADMIN ou SUPER_ADMIN) podem alterar dados da arena.
+              Seu perfil atual ({userRoleLabels[profile?.role || ''] || profile?.role || '—'}) possui permissão de leitura. Apenas administradores da arena podem alterar os dados da arena.
             </p>
           </div>
         </div>

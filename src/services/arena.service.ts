@@ -25,6 +25,7 @@ import {
   PendingReservationItem,
   Teacher, Student, TeacherStudent, StudentPayment, StudentPaymentStatus
 } from '../types';
+import { buildArenaDateTime, getArenaHour, getTodayArenaDate } from '../utils/agendaDate';
 
 export const arenaService = {
   // 1. ARENAS
@@ -1090,15 +1091,20 @@ export const arenaService = {
     const slots: Array<{ hour: string; startAt: string; endAt: string; status: 'AVAILABLE' | 'RESERVED' | 'BLOCKED' | 'PAST' }> = [];
 
     const now = new Date();
-    const isToday = dateStr === now.toISOString().split('T')[0];
-    const currentHour = now.getHours();
+    const isToday = dateStr === getTodayArenaDate();
+    const currentHour = getArenaHour(now);
 
     for (let h = openingHour; h < endBoundary; h++) {
       const hourStr = h < 10 ? `0${h}:00` : `${h}:00`;
       const nextHourStr = (h + 1) < 10 ? `0${h + 1}:00` : (h + 1) === 24 ? '00:00' : `${h + 1}:00`;
 
-      const startAt = `${dateStr}T${hourStr}:00.000Z`;
-      const endAt = `${dateStr}T${nextHourStr}:00.000Z`;
+      const startAt = buildArenaDateTime(dateStr, hourStr);
+      const endDate = (h + 1) === 24 ? (() => {
+        const d = new Date(`${dateStr}T12:00:00`);
+        d.setDate(d.getDate() + 1);
+        return d.toISOString().split('T')[0];
+      })() : dateStr;
+      const endAt = buildArenaDateTime(endDate, nextHourStr);
 
       const slotStart = new Date(startAt).getTime();
       const slotEnd = new Date(endAt).getTime();
@@ -1758,8 +1764,26 @@ export const arenaService = {
     }
 
     const cleanPaymentAmount = Math.round(Number(params.amount) * 100) / 100;
-    const allReservations = await this.getReservations('');
-    const reservation = allReservations.find(r => r.id === params.reservationId);
+
+    // Busca a reserva diretamente pelo ID.
+    // NÃO usar getReservations(''): arena_id é UUID e uma string vazia
+    // gera o erro PostgreSQL: invalid input syntax for type uuid: "".
+    let reservation: Reservation | null = null;
+
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase
+        .from('reservations')
+        .select('*, court:courts(*), customer:customers(*)')
+        .eq('id', params.reservationId)
+        .single();
+
+      if (error) throw error;
+      reservation = data as Reservation;
+    } else {
+      const allReservations = sandboxDB.getReservations('');
+      reservation = allReservations.find(r => r.id === params.reservationId) || null;
+    }
+
     if (!reservation) {
       throw new Error('Reserva não encontrada para registrar pagamento.');
     }
@@ -1790,7 +1814,7 @@ export const arenaService = {
       customer_id: reservation.customer_id,
       status: 'COMPLETED',
       notes: params.notes || `Pagamento ${newPaymentStatus === 'PAID' ? 'Total' : 'Parcial'} (${params.paymentMethod})`,
-      created_by: params.createdBy || 'u-admin-xp',
+      created_by: params.createdBy || (isSupabaseConfigured ? (await supabase.auth.getUser()).data.user?.id || null : null),
     });
 
     // 2. Update reservation status & payment method

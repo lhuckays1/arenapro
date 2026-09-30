@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { arenaService } from '../../services/arena.service';
 import { Court, Modality, Reservation, CourtBlock } from '../../types';
+import { addCalendarDays, buildArenaDateTime, getTodayArenaDate, nextHour } from '../../utils/agendaDate';
 import {
   CalendarDays,
   Clock,
@@ -117,8 +118,7 @@ export const ClientBookingPage: React.FC<ClientBookingPageProps> = ({
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     if (pendingBooking?.date) return pendingBooking.date;
 
-    const today = new Date();
-    return today.toISOString().split('T')[0];
+    return getTodayArenaDate();
   });
 
   const [selectedHour, setSelectedHour] = useState<string>(
@@ -241,14 +241,11 @@ export const ClientBookingPage: React.FC<ClientBookingPageProps> = ({
   const selectedCourt = courts.find(c => c.id === selectedCourtId);
 
   // Generate next 14 days for mobile pill selector
-  const todayDateObj = new Date();
-  todayDateObj.setHours(0, 0, 0, 0);
-  const todayStr = todayDateObj.toISOString().split('T')[0];
+  const todayStr = getTodayArenaDate();
 
   const datePills = Array.from({ length: 14 }).map((_, index) => {
-    const d = new Date();
-    d.setDate(d.getDate() + index);
-    const iso = d.toISOString().split('T')[0];
+    const iso = addCalendarDays(todayStr, index);
+    const d = new Date(`${iso}T12:00:00`);
     const dayOfWeek = d.toLocaleDateString('pt-BR', { weekday: 'short' }).toUpperCase().replace('.', '');
     const dayNumber = d.getDate();
     return { iso, dayOfWeek, dayNumber, dateObj: d };
@@ -349,11 +346,18 @@ export const ClientBookingPage: React.FC<ClientBookingPageProps> = ({
     setError(null);
 
     try {
-      const startAt = `${selectedDate}T${selectedHour}:00.000Z`;
-      const hourNum = parseInt(selectedHour.split(':')[0], 10);
-      const nextHourNum = hourNum + 1;
-      const endHourStr = nextHourNum < 10 ? `0${nextHourNum}:00` : nextHourNum === 24 ? '00:00' : `${nextHourNum}:00`;
-      const endAt = `${selectedDate}T${endHourStr}:00.000Z`;
+      const selectedSlot = timeSlots.find(slot => slot.hour === selectedHour);
+      if (!selectedSlot) {
+        throw new Error('O horário selecionado não está mais disponível. Escolha outro horário.');
+      }
+
+      // Os horários escolhidos pelo cliente são horários LOCAIS da arena.
+      // A conversão para UTC acontece somente aqui, antes de salvar no banco.
+      const startAt = selectedSlot.startAt || buildArenaDateTime(selectedDate, selectedHour);
+      const endAt = selectedSlot.endAt || buildArenaDateTime(
+        selectedHour.startsWith('23:') ? addCalendarDays(selectedDate, 1) : selectedDate,
+        nextHour(selectedHour)
+      );
 
       // 1. Double check / validation against live database
       const [freshReservations, freshBlocks] = await Promise.all([
@@ -466,7 +470,7 @@ export const ClientBookingPage: React.FC<ClientBookingPageProps> = ({
           <div className="flex justify-between items-center pb-2 border-b border-slate-800">
             <span className="text-slate-400">Horário</span>
             <span className="font-bold text-white bg-slate-800 px-2 py-0.5 rounded-md">
-              {selectedHour} → {parseInt(selectedHour.split(':')[0], 10) + 1}:00
+              {selectedHour} → {nextHour(selectedHour)}
             </span>
           </div>
 
@@ -909,7 +913,7 @@ export const ClientBookingPage: React.FC<ClientBookingPageProps> = ({
                   {new Date(selectedDate + 'T12:00:00').toLocaleDateString('pt-BR')}
                 </span>
                 <span className="text-slate-300 block text-xs mt-0.5">
-                  {selectedHour} → {parseInt(selectedHour.split(':')[0], 10) + 1}:00 (1 hora)
+                  {selectedHour} → {nextHour(selectedHour)} (1 hora)
                 </span>
               </div>
             </div>

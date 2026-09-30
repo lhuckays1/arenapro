@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { PaymentMethod, Reservation } from '../../types';
 import { arenaService } from '../../services/arena.service';
+import { translatePaymentStatus } from '../../utils/translation';
 
 interface RecordPaymentModalProps {
   isOpen: boolean;
@@ -132,7 +133,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
             <div>
               <span className="text-[10px] text-slate-500 uppercase font-semibold">Status Atual</span>
               <p className="text-[10px] font-bold text-teal-400 mt-0.5">
-                {reservation.payment_status}
+                {translatePaymentStatus(reservation.payment_status)}
               </p>
             </div>
           </div>

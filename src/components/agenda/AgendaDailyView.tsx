@@ -138,6 +138,8 @@ const calculateTimelineItem = (
   };
 };
 
+import { translateReservationStatus } from '../../utils/translation';
+
 export const AgendaDailyView: React.FC<
   AgendaDailyViewProps
 > = ({
@@ -965,7 +967,7 @@ export const AgendaDailyView: React.FC<
                                     : reservation.status ===
                                       'PENDING'
                                     ? 'Pagamento pendente'
-                                    : reservation.status}
+                                    : translateReservationStatus(reservation.status)}
                                 </span>
 
                               </div>

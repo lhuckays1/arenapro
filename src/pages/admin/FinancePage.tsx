@@ -11,6 +11,8 @@ import {
   FinancialTransactionCategory,
   PaymentMethod
 } from '../../types';
+import { formatArenaDate, formatArenaTime } from '../../utils/agendaDate';
+import { translateFinancialStatus, translatePaymentMethod } from '../../utils/translation';
 import { 
   DollarSign, 
   TrendingUp, 
@@ -622,10 +624,10 @@ export const FinancePage: React.FC<{ onNavigate: (path: string) => void }> = ({ 
                       <tr key={r.id} className="hover:bg-slate-800/30 transition">
                         <td className="py-3.5 px-3">
                           <div className="font-semibold text-white">
-                            {startDate.toLocaleDateString('pt-BR')}
+                            {formatArenaDate(r.start_at)}
                           </div>
                           <div className="text-[11px] text-slate-400">
-                            {startDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                            {formatArenaTime(r.start_at)}
                           </div>
                         </td>
                         <td className="py-3.5 px-3 font-medium text-slate-200">
@@ -739,7 +741,7 @@ export const FinancePage: React.FC<{ onNavigate: (path: string) => void }> = ({ 
                           {tx.notes && <div className="text-[10px] text-slate-500">{tx.notes}</div>}
                         </td>
                         <td className="py-3.5 px-3 text-slate-300 font-medium">
-                          {tx.payment_method}
+                          {translatePaymentMethod(tx.payment_method)}
                         </td>
                         <td className="py-3.5 px-3 font-bold text-rose-400">
                           - {formatCurrency(tx.amount)}
@@ -752,7 +754,7 @@ export const FinancePage: React.FC<{ onNavigate: (path: string) => void }> = ({ 
                                 : 'bg-slate-800 text-slate-400'
                             }`}
                           >
-                            {tx.status}
+                            {translateFinancialStatus(tx.status)}
                           </span>
                         </td>
                         <td className="py-3.5 px-3 text-right">
@@ -888,7 +890,7 @@ export const FinancePage: React.FC<{ onNavigate: (path: string) => void }> = ({ 
                           {tx.customer?.full_name || '—'}
                         </td>
                         <td className="py-3 px-3 text-slate-400">
-                          {tx.payment_method}
+                          {translatePaymentMethod(tx.payment_method)}
                         </td>
                         <td
                           className={`py-3 px-3 text-right font-bold ${
@@ -911,7 +913,7 @@ export const FinancePage: React.FC<{ onNavigate: (path: string) => void }> = ({ 
                                 : 'bg-slate-800 text-slate-400'
                             }`}
                           >
-                            {tx.status}
+                            {translateFinancialStatus(tx.status)}
                           </span>
                         </td>
                         <td className="py-3 px-3 text-right">
