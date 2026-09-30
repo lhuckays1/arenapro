@@ -25,6 +25,10 @@ import { ServicesPage } from './pages/admin/ServicesPage';
 import { FinancePage } from './pages/admin/FinancePage';
 import { SettingsPage } from './pages/admin/SettingsPage';
 import { UsersPage } from './pages/admin/UsersPage';
+import { TeachersPage } from './pages/admin/TeachersPage';
+import { StudentsPage } from './pages/admin/StudentsPage';
+import { StudentPaymentsPage } from './pages/admin/StudentPaymentsPage';
+import { TeacherDetailsPage } from './pages/admin/TeacherDetailsPage';
 import { SaaSPage } from './pages/admin/SaaSPage';
 import { SubscriptionBlockedPage } from './pages/admin/SubscriptionBlockedPage';
 
@@ -576,6 +580,33 @@ const AppContent: React.FC = () => {
 
         {currentPath === '/admin/clientes' && (
           <CustomersPage
+            onNavigate={navigate}
+          />
+        )}
+
+
+        {currentPath === '/admin/professores' && (
+          <TeachersPage
+            onNavigate={navigate}
+          />
+        )}
+
+        {currentPath.startsWith('/admin/professores/') && (
+          <TeacherDetailsPage
+            teacherId={currentPath.split('/')[3]}
+            onNavigate={navigate}
+          />
+        )}
+
+        {currentPath === '/admin/alunos' && (
+          <StudentsPage
+            onNavigate={navigate}
+          />
+        )}
+
+
+        {currentPath === '/admin/mensalidades' && (
+          <StudentPaymentsPage
             onNavigate={navigate}
           />
         )}

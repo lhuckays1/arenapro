@@ -22,7 +22,8 @@ import {
   FinancialSummary,
   DayFinancialData,
   CategoryBreakdown,
-  PendingReservationItem
+  PendingReservationItem,
+  Teacher, Student, TeacherStudent, StudentPayment, StudentPaymentStatus
 } from '../types';
 
 export const arenaService = {
@@ -350,6 +351,350 @@ export const arenaService = {
       notes: 'Cadastrado via Portal do Cliente Online.',
       status: 'ACTIVE',
     });
+  },
+
+  // 5. TEACHERS, STUDENTS & STUDENT PAYMENTS
+  async getTeachers(arenaId: string): Promise<Teacher[]> {
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase
+        .from('teachers')
+        .select('*, modality:modalities(*)')
+        .eq('arena_id', arenaId)
+        .order('full_name');
+      if (error) throw error;
+      return data || [];
+    }
+    return JSON.parse(localStorage.getItem(`arenapro_teachers_${arenaId}`) || '[]');
+  },
+
+  async createTeacher(teacher: Omit<Teacher, 'id' | 'created_at' | 'updated_at' | 'modality'>): Promise<Teacher> {
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.from('teachers').insert([{
+        ...teacher,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }]).select('*, modality:modalities(*)').single();
+      if (error) throw error;
+      return data;
+    }
+    const item = { ...teacher, id: crypto.randomUUID(), created_at: new Date().toISOString(), updated_at: new Date().toISOString() } as Teacher;
+    const list = await this.getTeachers(teacher.arena_id);
+    localStorage.setItem(`arenapro_teachers_${teacher.arena_id}`, JSON.stringify([...list, item]));
+    return item;
+  },
+
+  async deleteTeacher(id: string): Promise<void> {
+    if (isSupabaseConfigured) {
+      const { error } = await supabase.from('teachers').delete().eq('id', id);
+      if (error) throw error;
+      return;
+    }
+    const arenas = await this.getArenas();
+    for (const arena of arenas) {
+      const list = await this.getTeachers(arena.id);
+      const next = list.filter(t => t.id !== id);
+      if (next.length !== list.length) {
+        localStorage.setItem(`arenapro_teachers_${arena.id}`, JSON.stringify(next));
+        return;
+      }
+    }
+    throw new Error('Professor não encontrado.');
+  },
+
+  async updateTeacher(id: string, updates: Partial<Teacher>): Promise<Teacher> {
+    if (isSupabaseConfigured) {
+      const { modality, ...payload } = updates;
+      const { data, error } = await supabase.from('teachers').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', id).select('*, modality:modalities(*)').single();
+      if (error) throw error;
+      return data;
+    }
+    const arenas = await this.getArenas();
+    for (const arena of arenas) {
+      const list = await this.getTeachers(arena.id);
+      const index = list.findIndex(t => t.id === id);
+      if (index >= 0) {
+        const updated = { ...list[index], ...updates, updated_at: new Date().toISOString() } as Teacher;
+        list[index] = updated;
+        localStorage.setItem(`arenapro_teachers_${arena.id}`, JSON.stringify(list));
+        return updated;
+      }
+    }
+    throw new Error('Professor não encontrado.');
+  },
+
+  async getStudents(arenaId: string): Promise<Student[]> {
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.from('students').select('*').eq('arena_id', arenaId).order('full_name');
+      if (error) throw error;
+      return data || [];
+    }
+    return JSON.parse(localStorage.getItem(`arenapro_students_${arenaId}`) || '[]');
+  },
+
+  async createStudent(student: Omit<Student, 'id' | 'created_at' | 'updated_at'>): Promise<Student> {
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.from('students').insert([{
+        ...student,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }]).select().single();
+      if (error) throw error;
+      return data;
+    }
+    const item = { ...student, id: crypto.randomUUID(), created_at: new Date().toISOString(), updated_at: new Date().toISOString() } as Student;
+    const list = await this.getStudents(student.arena_id);
+    localStorage.setItem(`arenapro_students_${student.arena_id}`, JSON.stringify([...list, item]));
+    return item;
+  },
+
+  async deleteStudent(id: string): Promise<void> {
+    if (isSupabaseConfigured) {
+      const { error } = await supabase.from('students').delete().eq('id', id);
+      if (error) throw error;
+      return;
+    }
+    const arenas = await this.getArenas();
+    for (const arena of arenas) {
+      const list = await this.getStudents(arena.id);
+      const next = list.filter(st => st.id !== id);
+      if (next.length !== list.length) {
+        localStorage.setItem(`arenapro_students_${arena.id}`, JSON.stringify(next));
+        return;
+      }
+    }
+    throw new Error('Aluno não encontrado.');
+  },
+
+  async updateStudent(id: string, updates: Partial<Student>): Promise<Student> {
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.from('students').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+      if (error) throw error;
+      return data;
+    }
+    const arenas = await this.getArenas();
+    for (const arena of arenas) {
+      const list = await this.getStudents(arena.id);
+      const index = list.findIndex(st => st.id === id);
+      if (index >= 0) {
+        const updated = { ...list[index], ...updates, updated_at: new Date().toISOString() } as Student;
+        list[index] = updated;
+        localStorage.setItem(`arenapro_students_${arena.id}`, JSON.stringify(list));
+        return updated;
+      }
+    }
+    throw new Error('Aluno não encontrado.');
+  },
+
+  async getTeacherStudents(arenaId: string, teacherId?: string): Promise<TeacherStudent[]> {
+    if (isSupabaseConfigured) {
+      let query = supabase.from('teacher_students').select('*, teacher:teachers(*), student:students(*)').eq('arena_id', arenaId);
+      if (teacherId) query = query.eq('teacher_id', teacherId);
+      const { data, error } = await query.order('created_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    }
+    return JSON.parse(localStorage.getItem(`arenapro_teacher_students_${arenaId}`) || '[]');
+  },
+
+  async createTeacherStudent(link: Omit<TeacherStudent, 'id' | 'created_at' | 'updated_at' | 'teacher' | 'student'>): Promise<TeacherStudent> {
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.from('teacher_students').insert([{
+        ...link,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }]).select('*, teacher:teachers(*), student:students(*)').single();
+      if (error) throw error;
+      return data;
+    }
+    const item = { ...link, id: crypto.randomUUID(), created_at: new Date().toISOString(), updated_at: new Date().toISOString() } as TeacherStudent;
+    const list = await this.getTeacherStudents(link.arena_id);
+    localStorage.setItem(`arenapro_teacher_students_${link.arena_id}`, JSON.stringify([...list, item]));
+    return item;
+  },
+
+  async updateTeacherStudent(id: string, updates: Partial<TeacherStudent>): Promise<TeacherStudent> {
+    if (isSupabaseConfigured) {
+      const { teacher, student, ...payload } = updates;
+      const { data, error } = await supabase.from('teacher_students').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', id).select('*, teacher:teachers(*), student:students(*)').single();
+      if (error) throw error;
+      return data;
+    }
+    throw new Error('Atualização de vínculo disponível apenas com Supabase configurado.');
+  },
+
+  async getStudentPayments(arenaId: string, filters?: { teacherId?: string; studentId?: string; month?: string }): Promise<StudentPayment[]> {
+    if (isSupabaseConfigured) {
+      let query = supabase.from('student_payments').select('*, teacher:teachers(*), student:students(*)').eq('arena_id', arenaId);
+      if (filters?.teacherId) query = query.eq('teacher_id', filters.teacherId);
+      if (filters?.studentId) query = query.eq('student_id', filters.studentId);
+      if (filters?.month) query = query.eq('reference_month', filters.month);
+      const { data, error } = await query.order('due_date', { ascending: true });
+      if (error) throw error;
+      return data || [];
+    }
+    return JSON.parse(localStorage.getItem(`arenapro_student_payments_${arenaId}`) || '[]');
+  },
+
+  async createStudentPayment(payment: Omit<StudentPayment, 'id' | 'created_at' | 'updated_at' | 'teacher' | 'student'>): Promise<StudentPayment> {
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.from('student_payments').insert([{
+        ...payment,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }]).select('*, teacher:teachers(*), student:students(*)').single();
+      if (error) throw error;
+      return data;
+    }
+    const item = { ...payment, id: crypto.randomUUID(), created_at: new Date().toISOString(), updated_at: new Date().toISOString() } as StudentPayment;
+    const list = await this.getStudentPayments(payment.arena_id);
+    localStorage.setItem(`arenapro_student_payments_${payment.arena_id}`, JSON.stringify([...list, item]));
+    return item;
+  },
+
+  async generateRecurringStudentPayments(
+    arenaId: string,
+    params: {
+      referenceMonth: string;
+      dueDay: number;
+      defaultAmount?: number;
+      teacherId?: string;
+      studentIds?: string[];
+      notes?: string | null;
+    }
+  ): Promise<{ created: number; skipped: number; failed: number; errors: string[] }> {
+    const dueDay = Math.min(Math.max(Number(params.dueDay) || 1, 1), 28);
+    const defaultAmount = Number(params.defaultAmount || 0);
+    const selectedIds = params.studentIds?.length ? new Set(params.studentIds) : null;
+
+    const [links, allPayments] = await Promise.all([
+      this.getTeacherStudents(arenaId, params.teacherId),
+      this.getStudentPayments(arenaId),
+    ]);
+
+    const activeLinks = links.filter(link =>
+      link.status === 'ACTIVE' &&
+      link.student?.status === 'ACTIVE' &&
+      link.teacher?.status === 'ACTIVE' &&
+      (!params.teacherId || link.teacher_id === params.teacherId) &&
+      (!selectedIds || selectedIds.has(link.student_id))
+    );
+
+    const existingKeys = new Set(
+      allPayments.map(payment => `${payment.teacher_id}:${payment.student_id}:${payment.reference_month.slice(0, 7)}`)
+    );
+
+    const latestAmountByLink = new Map<string, number>();
+    [...allPayments]
+      .sort((a, b) => `${b.reference_month}-${b.created_at}`.localeCompare(`${a.reference_month}-${a.created_at}`))
+      .forEach(payment => {
+        const key = `${payment.teacher_id}:${payment.student_id}`;
+        if (!latestAmountByLink.has(key) && payment.amount > 0) latestAmountByLink.set(key, Number(payment.amount));
+      });
+
+    const addMonths = (date: Date, amount: number) => {
+      const d = new Date(date);
+      d.setMonth(d.getMonth() + amount);
+      return d;
+    };
+
+    const monthStart = (date: Date) => new Date(date.getFullYear(), date.getMonth(), 1);
+    const endOfMonth = (year: number, monthIndex: number) => new Date(year, monthIndex + 1, 0).getDate();
+    const monthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+    let created = 0;
+    let skipped = 0;
+    let failed = 0;
+    const errors: string[] = [];
+
+    for (const link of activeLinks) {
+      const start = new Date(`${link.start_date}T00:00:00`);
+      let end: Date | null = link.end_date ? new Date(`${link.end_date}T00:00:00`) : null;
+      if (!end && link.duration_value && link.duration_unit) {
+        end = new Date(start);
+        if (link.duration_unit === 'MONTHS') end.setMonth(end.getMonth() + Number(link.duration_value));
+        else end.setDate(end.getDate() + Number(link.duration_value) * 7 - 1);
+      }
+      if (!end) {
+        const requested = new Date(`${params.referenceMonth.slice(0, 7)}-01T00:00:00`);
+        end = addMonths(requested, 0);
+      }
+
+      const requestedMonth = monthStart(new Date(`${params.referenceMonth.slice(0, 7)}-01T00:00:00`));
+      const firstMonth = monthStart(start) > requestedMonth ? monthStart(start) : requestedMonth;
+      const lastMonth = monthStart(end);
+      if (firstMonth > lastMonth) continue;
+      const amount = Number(link.monthly_amount || latestAmountByLink.get(`${link.teacher_id}:${link.student_id}`) || defaultAmount);
+      if (!(amount > 0)) {
+        failed += 1;
+        errors.push(`${link.student?.full_name || 'Aluno'}: informe o valor mensal.`);
+        continue;
+      }
+
+      for (let cursor = new Date(firstMonth); cursor <= lastMonth; cursor = addMonths(cursor, 1)) {
+        const key = `${link.teacher_id}:${link.student_id}:${monthKey(cursor)}`;
+        if (existingKeys.has(key)) { skipped += 1; continue; }
+        const dueDate = `${monthKey(cursor)}-${String(Math.min(dueDay, endOfMonth(cursor.getFullYear(), cursor.getMonth()))).padStart(2, '0')}`;
+        try {
+          await this.createStudentPayment({
+            arena_id: arenaId, teacher_id: link.teacher_id, student_id: link.student_id,
+            reference_month: `${monthKey(cursor)}-01`, due_date: dueDate, amount, status: 'PENDING',
+            paid_at: null, payment_method: null, financial_transaction_id: null,
+            notes: params.notes || `Mensalidade recorrente - ${monthKey(cursor)}`,
+          });
+          created += 1; existingKeys.add(key);
+        } catch (error: any) {
+          failed += 1;
+          errors.push(`${link.student?.full_name || 'Aluno'} (${monthKey(cursor)}): ${error?.message || 'erro ao gerar'}`);
+        }
+      }
+    }
+
+    return { created, skipped, failed, errors };
+  },
+
+  async registerStudentPayment(
+    payment: StudentPayment,
+    params: { paymentMethod: PaymentMethod; paidAt?: string; notes?: string; createdBy?: string | null }
+  ): Promise<StudentPayment> {
+    if (payment.status === 'PAID' && payment.financial_transaction_id) {
+      return payment;
+    }
+
+    const paidAt = params.paidAt || new Date().toISOString();
+    const transaction = await this.createFinancialTransaction({
+      arena_id: payment.arena_id,
+      type: 'INCOME',
+      category: 'SERVICE',
+      description: `Mensalidade - ${payment.student?.full_name || 'Aluno'}${payment.teacher?.full_name ? ` - ${payment.teacher.full_name}` : ''}`,
+      amount: payment.amount,
+      payment_method: params.paymentMethod,
+      transaction_date: paidAt.slice(0, 10),
+      reservation_id: null,
+      customer_id: null,
+      service_id: null,
+      status: 'COMPLETED',
+      notes: params.notes || `Mensalidade competência ${payment.reference_month.slice(0, 7)}`,
+      created_by: params.createdBy || null,
+    });
+
+    return this.updateStudentPayment(payment.id, {
+      status: 'PAID',
+      paid_at: paidAt,
+      payment_method: params.paymentMethod,
+      financial_transaction_id: transaction.id,
+      notes: params.notes ?? payment.notes ?? null,
+    });
+  },
+
+  async updateStudentPayment(id: string, updates: Partial<StudentPayment>): Promise<StudentPayment> {
+    if (isSupabaseConfigured) {
+      const { teacher, student, ...payload } = updates;
+      const normalized = payload.status === 'PAID' && !payload.paid_at ? { ...payload, paid_at: new Date().toISOString() } : payload.status && payload.status !== 'PAID' ? { ...payload, paid_at: null } : payload;
+      const { data, error } = await supabase.from('student_payments').update({ ...normalized, updated_at: new Date().toISOString() }).eq('id', id).select('*, teacher:teachers(*), student:students(*)').single();
+      if (error) throw error;
+      return data;
+    }
+    throw new Error('Atualização de mensalidade disponível apenas com Supabase configurado.');
   },
 
   // 6. RESERVATIONS & OVERLAP VALIDATION

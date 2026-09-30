@@ -128,6 +128,74 @@ export interface Customer {
   updated_at: string;
 }
 
+
+export interface Teacher {
+  id: string;
+  arena_id: string;
+  full_name: string;
+  phone?: string | null;
+  email?: string | null;
+  cpf?: string | null;
+  modality_id?: string | null;
+  status: EntityStatus;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+  modality?: Modality;
+}
+
+export interface Student {
+  id: string;
+  arena_id: string;
+  full_name: string;
+  phone?: string | null;
+  email?: string | null;
+  birth_date?: string | null;
+  status: EntityStatus;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TeacherStudent {
+  id: string;
+  arena_id: string;
+  teacher_id: string;
+  student_id: string;
+  start_date: string;
+  end_date?: string | null;
+  status: EntityStatus;
+  notes?: string | null;
+  duration_value?: number | null;
+  duration_unit?: 'MONTHS' | 'WEEKS' | null;
+  monthly_amount?: number | null;
+  created_at: string;
+  updated_at: string;
+  teacher?: Teacher;
+  student?: Student;
+}
+
+export type StudentPaymentStatus = 'PENDING' | 'PAID' | 'OVERDUE' | 'CANCELLED';
+
+export interface StudentPayment {
+  id: string;
+  arena_id: string;
+  teacher_id: string;
+  student_id: string;
+  reference_month: string;
+  due_date: string;
+  amount: number;
+  status: StudentPaymentStatus;
+  paid_at?: string | null;
+  payment_method?: PaymentMethod | null;
+  financial_transaction_id?: string | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+  teacher?: Teacher;
+  student?: Student;
+}
+
 export interface Service {
   id: string;
   arena_id: string;
