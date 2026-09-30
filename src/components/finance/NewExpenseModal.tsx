@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
 import { 
   X, 
   TrendingDown, 
@@ -19,12 +20,19 @@ interface NewExpenseModalProps {
   onExpenseCreated: () => void;
 }
 
+const isValidUUID = (value?: string | null) => {
+  if (!value) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+};
+
 export const NewExpenseModal: React.FC<NewExpenseModalProps> = ({
   isOpen,
   onClose,
   arenaId,
   onExpenseCreated,
 }) => {
+  const { user } = useAuth();
+
   if (!isOpen) return null;
 
   const [description, setDescription] = useState('');
@@ -84,7 +92,7 @@ export const NewExpenseModal: React.FC<NewExpenseModalProps> = ({
         transaction_date: transactionDate,
         status: 'COMPLETED',
         notes: notes.trim() || undefined,
-        created_by: 'u-admin-xp',
+        created_by: user?.id && isValidUUID(user.id) ? user.id : undefined,
       });
 
       onExpenseCreated();
