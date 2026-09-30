@@ -217,9 +217,11 @@ const AppContent: React.FC = () => {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center space-y-4">
 
-        <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center font-black text-slate-950 text-2xl shadow-xl shadow-emerald-500/20 animate-pulse">
-          A
-        </div>
+        <img
+          src="/logo.png"
+          alt="ArenaPro"
+          className="w-56 h-auto max-h-28 object-contain animate-pulse"
+        />
 
         <div className="flex items-center gap-2 text-xs font-semibold text-slate-400">
 

@@ -53,30 +53,27 @@ export const ClientLayout: React.FC<ClientLayoutProps> = ({ currentPath, onNavig
       <header className="sticky top-0 z-30 bg-slate-900/90 backdrop-blur border-b border-slate-800 px-4 py-3">
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
           {/* Brand & Active Arena Selector */}
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center font-black text-slate-950 shadow-md">
-              A
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-extrabold text-sm tracking-tight text-white">Arena<span className="text-emerald-400">Pro</span></span>
-              </div>
-              <div className="flex items-center gap-1 text-[11px] text-slate-400 font-medium">
-                <Building2 className="w-3 h-3 text-emerald-400" />
-                <select
-                  id="client-arena-select"
-                  value={activeArena?.id || ''}
-                  onChange={(e) => {
-                    const matched = arenas.find(a => a.id === e.target.value);
-                    if (matched) setActiveArena(matched);
-                  }}
-                  className="bg-transparent border-0 text-slate-200 font-semibold focus:ring-0 p-0 cursor-pointer"
-                >
-                  {arenas.map(a => (
-                    <option key={a.id} value={a.id} className="bg-slate-900 text-slate-100">{a.name}</option>
-                  ))}
-                </select>
-              </div>
+          <div className="flex items-center gap-3 min-w-0">
+            <img
+              src="/logo.png"
+              alt="ArenaPro — Reservas Esportivas"
+              className="w-36 sm:w-40 h-12 object-contain object-left shrink-0"
+            />
+            <div className="hidden sm:flex items-center gap-1 text-[11px] text-slate-400 font-medium min-w-0">
+              <Building2 className="w-3 h-3 text-emerald-400 shrink-0" />
+              <select
+                id="client-arena-select"
+                value={activeArena?.id || ''}
+                onChange={(e) => {
+                  const matched = arenas.find(a => a.id === e.target.value);
+                  if (matched) setActiveArena(matched);
+                }}
+                className="bg-transparent border-0 text-slate-200 font-semibold focus:ring-0 p-0 cursor-pointer max-w-40"
+              >
+                {arenas.map(a => (
+                  <option key={a.id} value={a.id} className="bg-slate-900 text-slate-100">{a.name}</option>
+                ))}
+              </select>
             </div>
           </div>
 

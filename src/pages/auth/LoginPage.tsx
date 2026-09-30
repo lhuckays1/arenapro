@@ -42,13 +42,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
       <div className="sm:mx-auto sm:w-full sm:max-w-md relative z-10">
 
         <div className="flex justify-center">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center font-black text-slate-950 text-2xl shadow-xl shadow-emerald-500/20">
-            A
-          </div>
+          <img
+            src="/logo.png"
+            alt="ArenaPro"
+            className="w-56 h-auto max-h-32 object-contain drop-shadow-2xl"
+          />
         </div>
 
-        <h2 className="mt-4 text-center text-2xl font-extrabold text-slate-100 tracking-tight">
-          Arena<span className="text-emerald-400">Pro</span>
+        <h2 className="sr-only">
+          ArenaPro
         </h2>
 
         <p className="mt-1 text-center text-xs text-slate-400">

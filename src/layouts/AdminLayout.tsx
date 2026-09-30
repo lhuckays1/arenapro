@@ -180,8 +180,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
             <div className="flex items-center gap-3">
 
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center font-black text-slate-950 text-lg shadow-lg shadow-emerald-500/20">
-                A
+              <div className="w-10 h-10 rounded-xl bg-slate-950/70 border border-slate-700/70 flex items-center justify-center overflow-hidden shadow-lg shadow-emerald-500/10">
+                <img
+                  src="/logo.png"
+                  alt="ArenaPro"
+                  className="w-9 h-9 object-contain"
+                />
               </div>
 
               <div>
@@ -503,8 +507,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
                   <div className="flex items-center gap-2">
 
-                    <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center font-bold text-slate-950">
-                      A
+                    <div className="w-9 h-9 rounded-lg bg-slate-950/70 border border-slate-700/70 flex items-center justify-center overflow-hidden">
+                      <img
+                        src="/logo.png"
+                        alt="ArenaPro"
+                        className="w-8 h-8 object-contain"
+                      />
                     </div>
 
                     <span className="font-bold text-slate-100">

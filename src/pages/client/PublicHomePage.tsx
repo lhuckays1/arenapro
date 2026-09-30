@@ -79,24 +79,14 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
             <button
               type="button"
               onClick={() => onNavigate('/')}
-              className="flex items-center gap-3"
+              className="flex items-center"
+              aria-label="ArenaPro — Reservas Esportivas"
             >
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center font-black text-slate-950 text-xl shadow-lg shadow-emerald-500/20">
-                A
-              </div>
-
-              <div className="text-left">
-                <div className="font-extrabold text-lg tracking-tight text-white">
-                  Arena
-                  <span className="text-emerald-400">
-                    Pro
-                  </span>
-                </div>
-
-                <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500 font-bold">
-                  Reservas esportivas
-                </div>
-              </div>
+              <img
+                src="/logo.png"
+                alt="ArenaPro — Reservas Esportivas"
+                className="w-40 sm:w-44 h-12 object-contain object-left"
+              />
             </button>
 
             {/* LOGIN */}
