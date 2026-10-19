@@ -23,6 +23,7 @@ import { ModalitiesPage } from './pages/admin/ModalitiesPage';
 import { CustomersPage } from './pages/admin/CustomersPage';
 import { ServicesPage } from './pages/admin/ServicesPage';
 import { FinancePage } from './pages/admin/FinancePage';
+import { BarComandasPage } from './pages/admin/BarComandasPage';
 import { SettingsPage } from './pages/admin/SettingsPage';
 import { UsersPage } from './pages/admin/UsersPage';
 import { TeachersPage } from './pages/admin/TeachersPage';
@@ -627,6 +628,10 @@ const AppContent: React.FC = () => {
           />
         )}
 
+
+        {currentPath === '/admin/bar-comandas' && (
+          <BarComandasPage onNavigate={navigate} />
+        )}
 
         {currentPath === '/admin/configuracoes' && (
           <SettingsPage

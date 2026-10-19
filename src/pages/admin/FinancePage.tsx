@@ -29,7 +29,6 @@ import {
   Download, 
   AlertCircle, 
   CheckCircle2, 
-  ShieldCheck, 
   Tag, 
   ChevronRight,
   Eye,
@@ -56,7 +55,6 @@ import { RecordPaymentModal } from '../../components/finance/RecordPaymentModal'
 import { NewExpenseModal } from '../../components/finance/NewExpenseModal';
 import { NewIncomeModal } from '../../components/finance/NewIncomeModal';
 import { TransactionDetailsModal } from '../../components/finance/TransactionDetailsModal';
-import { FinancialDiagnosticModal } from '../../components/finance/FinancialDiagnosticModal';
 
 export const FinancePage: React.FC<{ onNavigate: (path: string) => void }> = ({ onNavigate }) => {
   const { activeArena } = useAuth();
@@ -86,7 +84,6 @@ export const FinancePage: React.FC<{ onNavigate: (path: string) => void }> = ({ 
   const [isNewIncomeOpen, setIsNewIncomeOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<FinancialTransaction | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
-  const [isDiagnosticOpen, setIsDiagnosticOpen] = useState(false);
 
   const loadData = async () => {
     if (!activeArena) return;
@@ -201,14 +198,6 @@ export const FinancePage: React.FC<{ onNavigate: (path: string) => void }> = ({ 
 
         {/* Global Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => setIsDiagnosticOpen(true)}
-            className="px-3 py-2 rounded-xl bg-slate-900 border border-teal-500/30 text-teal-300 hover:bg-teal-500/10 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
-          >
-            <ShieldCheck className="w-4 h-4 text-teal-400" />
-            <span className="hidden sm:inline">Diagnóstico (14 Testes)</span>
-          </button>
-
           <button
             onClick={() => setIsNewIncomeOpen(true)}
             className="px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
@@ -969,11 +958,6 @@ export const FinancePage: React.FC<{ onNavigate: (path: string) => void }> = ({ 
         onTransactionUpdated={loadData}
       />
 
-      <FinancialDiagnosticModal
-        isOpen={isDiagnosticOpen}
-        onClose={() => setIsDiagnosticOpen(false)}
-        arenaId={activeArena?.id || ''}
-      />
     </div>
   );
 };

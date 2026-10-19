@@ -15,6 +15,7 @@ import {
   UserCheck,
   UserRound,
   ReceiptText,
+  Beer,
   LogOut,
   Menu,
   X,
@@ -105,6 +106,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
       name: 'Financeiro',
       path: '/admin/financeiro',
       icon: <DollarSign className="w-4 h-4" />,
+    },
+    {
+      name: 'Bar / Comandas',
+      path: '/admin/bar-comandas',
+      icon: <Beer className="w-4 h-4" />,
     },
     {
       name: 'Configurações',

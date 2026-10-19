@@ -25,7 +25,7 @@ import { Arena } from '../../types';
 import { userRoleLabels } from '../../utils/translation';
 
 export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = () => {
-  const { activeArena, setActiveArena, profile, isConfigured } = useAuth();
+  const { activeArena, setActiveArena, profile } = useAuth();
   
   const isArenaAdmin = profile?.role === 'ARENA_ADMIN' || profile?.role === 'SUPER_ADMIN';
 
@@ -217,12 +217,7 @@ export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = ()
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-            {isConfigured ? 'Supabase Conectado' : 'Modo Desenvolvimento'}
-          </span>
-        </div>
+
       </div>
 
       {/* Role Alert if not Admin */}
