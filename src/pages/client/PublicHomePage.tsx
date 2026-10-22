@@ -11,6 +11,9 @@ import {
   Volleyball,
 } from 'lucide-react';
 
+import { useArenaDiscovery } from '../../hooks/useArenaDiscovery';
+import { ArenaLocationFilters } from '../../components/common/ArenaLocationFilters';
+import { formatDistance } from '../../utils/location';
 import { arenaService } from '../../services/arena.service';
 import { Arena } from '../../types';
 
@@ -54,18 +57,8 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
     loadArenas();
   }, []);
 
-  const filteredArenas = arenas.filter((arena) => {
-    const term = search.trim().toLowerCase();
-
-    if (!term) return true;
-
-    return (
-      arena.name?.toLowerCase().includes(term) ||
-      arena.city?.toLowerCase().includes(term) ||
-      arena.state?.toLowerCase().includes(term) ||
-      arena.description?.toLowerCase().includes(term)
-    );
-  });
+  const discovery = useArenaDiscovery(arenas, search);
+  const filteredArenas = discovery.results;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -138,12 +131,14 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
 
               <input
                 type="text"
+                aria-label="Buscar arenas por nome, cidade ou estado"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Buscar por arena, cidade ou estado..."
                 className="w-full h-14 pl-12 pr-4 rounded-2xl bg-slate-900 border border-slate-800 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/10 transition"
               />
             </div>
+            <ArenaLocationFilters discovery={discovery} />
           </div>
         </div>
       </section>
@@ -234,7 +229,7 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
               </h3>
 
               <p className="mt-1 text-sm text-slate-500">
-                {search
+                {search || discovery.position || discovery.city
                   ? 'Tente alterar os termos da busca.'
                   : 'Ainda não existem arenas disponíveis.'}
               </p>
@@ -246,7 +241,7 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
           !error &&
           filteredArenas.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {filteredArenas.map((arena) => (
+              {filteredArenas.map(({ arena, distance }) => (
                 <button
                   key={arena.id}
                   type="button"
@@ -294,6 +289,7 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
                       </p>
                     )}
 
+                    {distance !== null && <p className="mt-3 text-xs font-bold text-emerald-300">Aprox. {formatDistance(distance)} de você</p>}
                     <div className="mt-4 space-y-2.5">
                       {(arena.city || arena.state) && (
                         <div className="flex items-center gap-2 text-xs text-slate-400">
