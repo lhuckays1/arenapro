@@ -6,7 +6,6 @@ import React, {
 import { useAuth } from '../../contexts/AuthContext';
 import { arenaService } from '../../services/arena.service';
 
-import { DiagnosticTestsModal } from '../../components/DiagnosticTestsModal';
 
 import {
   DashboardAnalytics,
@@ -38,7 +37,6 @@ import {
   RefreshCw,
   Ban,
   Check,
-  Shield,
 } from 'lucide-react';
 
 import {
@@ -126,14 +124,6 @@ export const DashboardPage: React.FC<
   const [
     showBlockModal,
     setShowBlockModal,
-  ] =
-    useState<boolean>(
-      false
-    );
-
-  const [
-    showTestsModal,
-    setShowTestsModal,
   ] =
     useState<boolean>(
       false
@@ -818,22 +808,6 @@ export const DashboardPage: React.FC<
             </button>
 
           </div>
-
-          <button
-            type="button"
-            onClick={() =>
-              setShowTestsModal(
-                true
-              )
-            }
-            className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-slate-800 hover:bg-emerald-500/20 text-slate-300 border border-slate-700 text-xs font-bold transition cursor-pointer"
-          >
-            <Shield className="w-3.5 h-3.5 text-emerald-400" />
-
-            <span>
-              Auditar Sistema
-            </span>
-          </button>
 
           <button
             type="button"
@@ -2309,27 +2283,6 @@ export const DashboardPage: React.FC<
         </div>
 
       )}
-
-      {/* ======================================================
-          DIAGNÓSTICO
-      ====================================================== */}
-
-      <DiagnosticTestsModal
-        arenaId={
-          activeArena.id
-        }
-        arenaName={
-          activeArena.name
-        }
-        isOpen={
-          showTestsModal
-        }
-        onClose={() =>
-          setShowTestsModal(
-            false
-          )
-        }
-      />
 
     </div>
   );
