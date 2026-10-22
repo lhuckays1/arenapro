@@ -23,6 +23,8 @@ export interface Arena {
   address?: string | null;
   city?: string | null;
   state?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   zip_code?: string | null;
   logo_url?: string | null;
   timezone: string;

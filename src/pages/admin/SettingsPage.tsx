@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { arenaService } from '../../services/arena.service';
 import { supabase } from '../../lib/supabase';
@@ -40,12 +40,16 @@ export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = ()
     address: '',
     city: '',
     state: '',
+    latitude: null,
+    longitude: null,
     zip_code: '',
     opening_time: '06:00',
     closing_time: '23:00',
     cancellation_limit_hours: 2,
   });
 
+  const locationRequest = useRef(0);
+  const [locating, setLocating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -66,6 +70,8 @@ export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = ()
         address: activeArena.address || '',
         city: activeArena.city || '',
         state: activeArena.state || '',
+        latitude: activeArena.latitude ?? null,
+        longitude: activeArena.longitude ?? null,
         zip_code: activeArena.zip_code || '',
         opening_time: activeArena.opening_time || '06:00',
         closing_time: activeArena.closing_time || '23:00',
@@ -75,6 +81,44 @@ export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = ()
       setLogoUrlInput(activeArena.logo_url || '');
     }
   }, [activeArena]);
+
+  useEffect(() => {
+    setLocating(false);
+    return () => { locationRequest.current += 1; };
+  }, [activeArena?.id, isArenaAdmin]);
+
+  const handleUseCurrentLocation = () => {
+    if (!isArenaAdmin || !activeArena || saving || locating) return;
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    if (!window.isSecureContext || !navigator.geolocation) {
+      setErrorMessage('A localização não está disponível neste navegador. Acesse por HTTPS ou preencha as coordenadas manualmente.');
+      return;
+    }
+
+    const request = ++locationRequest.current;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        if (request !== locationRequest.current) return;
+        setFormData(prev => ({ ...prev, latitude: coords.latitude, longitude: coords.longitude }));
+        setLocating(false);
+        setSuccessMessage('Localização preenchida. Clique em "Salvar Configurações da Arena" para confirmar.');
+      },
+      (error) => {
+        if (request !== locationRequest.current) return;
+        setLocating(false);
+        const messages: Record<number, string> = {
+          1: 'Permissão de localização negada. Autorize o acesso no navegador ou preencha as coordenadas manualmente.',
+          2: 'Não foi possível obter a localização. Tente novamente ou preencha as coordenadas manualmente.',
+          3: 'O tempo para obter a localização esgotou. Tente novamente ou preencha as coordenadas manualmente.',
+        };
+        setErrorMessage(messages[error.code] || 'Erro ao obter a localização. Preencha as coordenadas manualmente.');
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  };
 
   const handleLogoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -162,7 +206,7 @@ export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = ()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeArena) return;
+    if (!activeArena || locating) return;
     if (!isArenaAdmin) {
       setErrorMessage('Permissão negada: apenas administradores da arena podem alterar essas configurações.');
       return;
@@ -189,6 +233,17 @@ export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = ()
         } catch {
           throw new Error('A URL da logo não é válida. Use uma URL iniciada por http:// ou https://.');
         }
+      }
+
+      const { latitude, longitude } = formData;
+      if ((latitude == null) !== (longitude == null)) {
+        throw new Error('Preencha latitude e longitude juntas ou deixe ambas vazias.');
+      }
+      if (latitude != null && (!Number.isFinite(latitude) || latitude < -90 || latitude > 90)) {
+        throw new Error('A latitude deve estar entre -90 e 90.');
+      }
+      if (longitude != null && (!Number.isFinite(longitude) || longitude < -180 || longitude > 180)) {
+        throw new Error('A longitude deve estar entre -180 e 180.');
       }
 
       const updated = await arenaService.updateArena(activeArena.id, {
@@ -615,6 +670,54 @@ export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = ()
               />
             </div>
           </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-4">
+            <div>
+              <h4 className="text-sm font-bold text-white">Localização da arena</h4>
+              <p className="text-xs text-slate-400 mt-1">
+                Use a localização atual somente quando estiver na arena. As coordenadas são opcionais e serão gravadas ao salvar as configurações.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleUseCurrentLocation}
+              disabled={!isArenaAdmin || !activeArena || locating || saving}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-300 text-xs font-semibold disabled:opacity-50"
+            >
+              {locating ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
+              {locating ? 'Obtendo localização...' : 'Usar localização atual'}
+            </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+              <div>
+                <label htmlFor="setting-latitude" className="block text-slate-300 font-semibold mb-1.5">Latitude</label>
+                <input
+                  id="setting-latitude"
+                  type="number"
+                  min={-90}
+                  max={90}
+                  step="any"
+                  disabled={!isArenaAdmin || locating || saving}
+                  value={formData.latitude ?? ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, latitude: e.target.value === '' ? null : e.target.valueAsNumber }))}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500 transition disabled:opacity-60"
+                />
+              </div>
+              <div>
+                <label htmlFor="setting-longitude" className="block text-slate-300 font-semibold mb-1.5">Longitude</label>
+                <input
+                  id="setting-longitude"
+                  type="number"
+                  min={-180}
+                  max={180}
+                  step="any"
+                  disabled={!isArenaAdmin || locating || saving}
+                  value={formData.longitude ?? ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, longitude: e.target.value === '' ? null : e.target.valueAsNumber }))}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500 transition disabled:opacity-60"
+                />
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Security & Multi-tenant Notice */}
@@ -637,7 +740,7 @@ export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = ()
             <button
               type="submit"
               id="save-arena-settings-btn"
-              disabled={saving}
+              disabled={saving || locating}
               className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-slate-950 font-bold rounded-xl shadow-lg shadow-emerald-500/20 transition flex items-center gap-2 text-xs cursor-pointer disabled:opacity-50"
             >
               <Save className="w-4 h-4" />
