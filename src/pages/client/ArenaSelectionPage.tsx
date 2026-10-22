@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Search,
   MapPin,
@@ -9,6 +9,9 @@ import {
   ChevronLeft,
 } from 'lucide-react';
 
+import { useArenaDiscovery } from '../../hooks/useArenaDiscovery';
+import { ArenaLocationFilters } from '../../components/common/ArenaLocationFilters';
+import { formatDistance } from '../../utils/location';
 import { arenaService } from '../../services/arena.service';
 import { Arena } from '../../types';
 
@@ -66,22 +69,8 @@ export const ArenaSelectionPage: React.FC<ArenaSelectionPageProps> = ({
     };
   }, []);
 
-  const filteredArenas = useMemo(() => {
-    const term = search.trim().toLowerCase();
-
-    if (!term) {
-      return arenas;
-    }
-
-    return arenas.filter((arena) => {
-      return (
-        arena.name.toLowerCase().includes(term) ||
-        arena.city?.toLowerCase().includes(term) ||
-        arena.state?.toLowerCase().includes(term) ||
-        arena.address?.toLowerCase().includes(term)
-      );
-    });
-  }, [arenas, search]);
+  const discovery = useArenaDiscovery(arenas, search);
+  const filteredArenas = discovery.results;
 
   const handleSelectArena = (arena: Arena) => {
     if (!arena.slug) return;
@@ -124,12 +113,15 @@ export const ArenaSelectionPage: React.FC<ArenaSelectionPageProps> = ({
 
         <input
           type="text"
-          value={search}
+          aria-label="Buscar arenas por nome, cidade ou estado"
+                value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Buscar por arena, cidade ou endereço..."
           className="w-full bg-slate-900 border border-slate-800 rounded-2xl pl-11 pr-4 py-3 text-sm text-white placeholder:text-slate-600 outline-none focus:border-emerald-500/60 focus:ring-1 focus:ring-emerald-500/30 transition"
         />
       </div>
+
+      <ArenaLocationFilters discovery={discovery} />
 
       {/* ERROR */}
       {error && (
@@ -192,7 +184,7 @@ export const ArenaSelectionPage: React.FC<ArenaSelectionPageProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
 
-            {filteredArenas.map((arena) => (
+            {filteredArenas.map(({ arena, distance }) => (
               <button
                 key={arena.id}
                 type="button"
@@ -264,6 +256,8 @@ export const ArenaSelectionPage: React.FC<ArenaSelectionPageProps> = ({
                     </div>
 
                   </div>
+
+                  {distance !== null && <p className="text-xs font-bold text-emerald-300">Aprox. {formatDistance(distance)} de você</p>}
 
                   {/* ACTION */}
                   <div className="pt-3 border-t border-slate-800">

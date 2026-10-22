@@ -20,6 +20,8 @@ import {
   X,
   Loader2
 } from 'lucide-react';
+import { AddressMatch, searchArenaAddress } from '../../services/geocoding.service';
+import { hasCoordinates } from '../../utils/location';
 import { Arena } from '../../types';
 
 import { userRoleLabels } from '../../utils/translation';
@@ -50,6 +52,10 @@ export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = ()
 
   const locationRequest = useRef(0);
   const [locating, setLocating] = useState(false);
+  const [searchingAddress, setSearchingAddress] = useState(false);
+  const [addressMatches, setAddressMatches] = useState<AddressMatch[]>([]);
+  const addressRequest = useRef(0);
+  const addressController = useRef<AbortController | null>(null);
   const [saving, setSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -87,10 +93,51 @@ export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = ()
     return () => { locationRequest.current += 1; };
   }, [activeArena?.id, isArenaAdmin]);
 
-  const handleUseCurrentLocation = () => {
-    if (!isArenaAdmin || !activeArena || saving || locating) return;
+  useEffect(() => {
+    setAddressMatches([]);
+    setSearchingAddress(false);
+    return () => {
+      addressRequest.current += 1;
+      addressController.current?.abort();
+    };
+  }, [activeArena?.id, isArenaAdmin, formData.address, formData.city, formData.state]);
+
+  const handleSearchAddress = async () => {
+    if (!isArenaAdmin || !activeArena || saving || locating || searchingAddress) return;
     setErrorMessage(null);
     setSuccessMessage(null);
+    setAddressMatches([]);
+    const request = ++addressRequest.current;
+    const controller = new AbortController();
+    addressController.current = controller;
+    setSearchingAddress(true);
+    const timeout = window.setTimeout(() => controller.abort(), 15000);
+    try {
+      const matches = await searchArenaAddress(formData.address || '', formData.city || '', formData.state || '', controller.signal);
+      if (request !== addressRequest.current) return;
+      setAddressMatches(matches);
+      if (!matches.length) setErrorMessage('Endereço não encontrado nessa cidade e estado. Revise a rua e o número ou use a localização atual estando na arena.');
+    } catch (error) {
+      if (request !== addressRequest.current) return;
+      setErrorMessage(controller.signal.aborted
+        ? 'A busca de endereço demorou demais. Tente novamente.'
+        : error instanceof Error ? error.message : 'Não foi possível buscar o endereço. Tente novamente.');
+    } finally {
+      window.clearTimeout(timeout);
+      if (request === addressRequest.current) setSearchingAddress(false);
+    }
+  };
+
+  const handleAddressChange = (field: 'address' | 'city' | 'state', value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value, latitude: null, longitude: null }));
+    setSuccessMessage(null);
+  };
+
+  const handleUseCurrentLocation = () => {
+    if (!isArenaAdmin || !activeArena || saving || locating || searchingAddress) return;
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setAddressMatches([]);
 
     if (!window.isSecureContext || !navigator.geolocation) {
       setErrorMessage('A localização não está disponível neste navegador. Acesse por HTTPS ou preencha as coordenadas manualmente.');
@@ -206,7 +253,7 @@ export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = ()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeArena || locating) return;
+    if (!activeArena || locating || searchingAddress) return;
     if (!isArenaAdmin) {
       setErrorMessage('Permissão negada: apenas administradores da arena podem alterar essas configurações.');
       return;
@@ -618,7 +665,7 @@ export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = ()
                 id="setting-address"
                 disabled={!isArenaAdmin}
                 value={formData.address || ''}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                onChange={(e) => handleAddressChange('address', e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500 transition disabled:opacity-60"
                 placeholder="Av. das Palmeiras, 1500"
               />
@@ -648,7 +695,7 @@ export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = ()
                 id="setting-city"
                 disabled={!isArenaAdmin}
                 value={formData.city || ''}
-                onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                onChange={(e) => handleAddressChange('city', e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500 transition disabled:opacity-60"
                 placeholder="São Paulo"
               />
@@ -664,7 +711,7 @@ export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = ()
                 id="setting-state"
                 disabled={!isArenaAdmin}
                 value={formData.state || ''}
-                onChange={(e) => setFormData({ ...formData, state: e.target.value.toUpperCase() })}
+                onChange={(e) => handleAddressChange('state', e.target.value.toUpperCase())}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500 transition disabled:opacity-60 uppercase"
                 placeholder="SP"
               />
@@ -675,18 +722,57 @@ export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = ()
             <div>
               <h4 className="text-sm font-bold text-white">Localização da arena</h4>
               <p className="text-xs text-slate-400 mt-1">
-                Use a localização atual somente quando estiver na arena. As coordenadas são opcionais e serão gravadas ao salvar as configurações.
+                A cidade e o estado identificam a arena na busca por cidade. Para aparecer por proximidade, busque o endereço completo ou use a localização atual estando na arena. Ao alterar endereço, cidade ou estado, confirme novamente a posição.
               </p>
             </div>
             <button
               type="button"
               onClick={handleUseCurrentLocation}
-              disabled={!isArenaAdmin || !activeArena || locating || saving}
+              disabled={!isArenaAdmin || !activeArena || locating || searchingAddress || saving}
               className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-300 text-xs font-semibold disabled:opacity-50"
             >
               {locating ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
               {locating ? 'Obtendo localização...' : 'Usar localização atual'}
             </button>
+
+            <button type="button" onClick={handleSearchAddress}
+              disabled={!isArenaAdmin || !activeArena || locating || searchingAddress || saving}
+              className="sm:ml-3 inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs font-semibold disabled:opacity-50">
+              {searchingAddress ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
+              {searchingAddress ? 'Buscando endereço...' : 'Buscar pelo endereço'}
+            </button>
+            <p className="text-xs text-slate-400">A busca envia o endereço comercial informado ao Photon para consultar o mapa. Confira o resultado antes de salvar.</p>
+            <p className="text-xs text-slate-500">
+              Busca por <a href="https://photon.komoot.io" target="_blank" rel="noopener noreferrer" className="underline">Photon</a>
+              {' · '}Dados © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" className="underline">OpenStreetMap contributors</a>
+            </p>
+            {addressMatches.length > 0 && (
+              <div className="space-y-3" aria-live="polite">
+                <p className="text-xs text-slate-300">Confira e selecione o endereço da arena:</p>
+                {addressMatches.map(match => (
+                  <div key={`${match.latitude},${match.longitude}`} className="rounded-xl border border-slate-700 p-3 text-xs space-y-2">
+                    <p className="text-slate-200">{match.label}</p>
+                    {match.approximate && <p className="text-amber-300">Posição aproximada da rua; o número não foi localizado. Prefira a localização atual para maior precisão.</p>}
+                    <div className="flex flex-wrap gap-3">
+                      <a href={`https://www.openstreetmap.org/?mlat=${match.latitude}&mlon=${match.longitude}#map=18/${match.latitude}/${match.longitude}`}
+                        target="_blank" rel="noopener noreferrer" className="text-blue-300 underline">Conferir no mapa</a>
+                      <button type="button" disabled={!isArenaAdmin || saving || locating}
+                        className="text-emerald-300 font-semibold disabled:opacity-50"
+                        onClick={() => {
+                          setFormData(prev => ({ ...prev, latitude: match.latitude, longitude: match.longitude }));
+                          setAddressMatches([]);
+                          setErrorMessage(null);
+                          setSuccessMessage('Localização do endereço preenchida. Confira no mapa e salve as configurações para confirmar.');
+                        }}>Usar este endereço</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {hasCoordinates(formData) && <a
+              href={`https://www.openstreetmap.org/?mlat=${formData.latitude}&mlon=${formData.longitude}#map=18/${formData.latitude}/${formData.longitude}`}
+              target="_blank" rel="noopener noreferrer" className="block text-xs text-blue-300 underline">Conferir posição da arena no mapa</a>}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
               <div>
                 <label htmlFor="setting-latitude" className="block text-slate-300 font-semibold mb-1.5">Latitude</label>
@@ -696,7 +782,7 @@ export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = ()
                   min={-90}
                   max={90}
                   step="any"
-                  disabled={!isArenaAdmin || locating || saving}
+                  disabled={!isArenaAdmin || locating || searchingAddress || saving}
                   value={formData.latitude ?? ''}
                   onChange={(e) => setFormData(prev => ({ ...prev, latitude: e.target.value === '' ? null : e.target.valueAsNumber }))}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500 transition disabled:opacity-60"
@@ -710,7 +796,7 @@ export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = ()
                   min={-180}
                   max={180}
                   step="any"
-                  disabled={!isArenaAdmin || locating || saving}
+                  disabled={!isArenaAdmin || locating || searchingAddress || saving}
                   value={formData.longitude ?? ''}
                   onChange={(e) => setFormData(prev => ({ ...prev, longitude: e.target.value === '' ? null : e.target.valueAsNumber }))}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500 transition disabled:opacity-60"
@@ -740,7 +826,7 @@ export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = ()
             <button
               type="submit"
               id="save-arena-settings-btn"
-              disabled={saving || locating}
+              disabled={saving || locating || searchingAddress}
               className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-slate-950 font-bold rounded-xl shadow-lg shadow-emerald-500/20 transition flex items-center gap-2 text-xs cursor-pointer disabled:opacity-50"
             >
               <Save className="w-4 h-4" />
@@ -752,3 +838,4 @@ export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = ()
     </div>
   );
 };
+

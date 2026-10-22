@@ -63,6 +63,14 @@ export const ClientHomePage: React.FC<ClientHomePageProps> = ({
                 RESERVAR QUADRA
                 <ArrowRight className="w-4 h-4" />
               </button>
+              <button
+                type="button"
+                onClick={() => onNavigate('/app/escolher-arena')}
+                className="mt-3 sm:ml-3 inline-flex items-center gap-2 px-5 py-3.5 rounded-2xl border border-emerald-500/30 text-emerald-300 text-sm font-bold"
+              >
+                <MapPin className="w-4 h-4" />
+                Encontrar arenas próximas
+              </button>
             </div>
 
           </div>
