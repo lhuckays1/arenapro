@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { arenaService } from '../../services/arena.service';
-import { Reservation, Court, Modality, Customer } from '../../types';
+import { Reservation, Court, Modality, Customer, FinancialTransaction } from '../../types';
 import { 
   BookmarkCheck, 
   Search, 
@@ -28,6 +28,7 @@ export const ReservationsPage: React.FC<{ onNavigate: (path: string) => void }> 
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [courts, setCourts] = useState<Court[]>([]);
   const [modalities, setModalities] = useState<Modality[]>([]);
+  const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
   
   // Reservation action / payment modal state
   const [isReservationActionOpen, setIsReservationActionOpen] = useState(false);
@@ -53,14 +54,16 @@ export const ReservationsPage: React.FC<{ onNavigate: (path: string) => void }> 
     if (!activeArena) return;
     setLoading(true);
     try {
-      const [res, crts, mods] = await Promise.all([
+      const [res, crts, mods, payments] = await Promise.all([
         arenaService.getReservations(activeArena.id),
         arenaService.getCourts(activeArena.id),
         arenaService.getModalities(activeArena.id),
+        arenaService.getFinancialTransactions(activeArena.id),
       ]);
       setReservations(res);
       setCourts(crts);
       setModalities(mods);
+      setTransactions(payments);
     } catch (err) {
       console.error('Error loading reservations:', err);
     } finally {
@@ -123,20 +126,25 @@ export const ReservationsPage: React.FC<{ onNavigate: (path: string) => void }> 
   }, [reservations, searchTerm, periodFilter, customStartDate, customEndDate, courtFilter, modalityFilter, statusFilter, paymentFilter]);
 
   // Filtered Summary Totals
+  const paidByReservation = useMemo(() => {
+    const amounts = new Map<string, number>();
+    for (const transaction of transactions) {
+      if (transaction.reservation_id && transaction.type === 'INCOME' && transaction.status === 'COMPLETED') {
+        amounts.set(transaction.reservation_id, (amounts.get(transaction.reservation_id) || 0) + transaction.amount);
+      }
+    }
+    return amounts;
+  }, [transactions]);
   const totals = useMemo(() => {
     const totalCount = filtered.length;
     const validReservations = filtered.filter(r => r.status !== 'CANCELLED');
     const validCount = validReservations.length;
     const totalRevenue = validReservations.reduce((sum, r) => sum + (r.amount || 0), 0);
-    const paidRevenue = validReservations
-      .filter(r => r.payment_status === 'PAID')
-      .reduce((sum, r) => sum + (r.amount || 0), 0);
-    const pendingRevenue = validReservations
-      .filter(r => r.payment_status === 'PENDING')
-      .reduce((sum, r) => sum + (r.amount || 0), 0);
+    const paidRevenue = validReservations.reduce((sum, reservation) => sum + (paidByReservation.get(reservation.id) || 0), 0);
+    const pendingRevenue = validReservations.reduce((sum, reservation) => sum + Math.max(0, reservation.amount - (paidByReservation.get(reservation.id) || 0)), 0);
 
     return { totalCount, validCount, totalRevenue, paidRevenue, pendingRevenue };
-  }, [filtered]);
+  }, [filtered, paidByReservation]);
 
   // Abre o modal de ações ao tocar/clicar em qualquer reserva.
   const handleOpenReservation = (r: Reservation) => {
@@ -387,6 +395,7 @@ export const ReservationsPage: React.FC<{ onNavigate: (path: string) => void }> 
             >
               <option value="ALL">Todos</option>
               <option value="PAID">Pago</option>
+              <option value="PARTIAL">Parcial / Sinal</option>
               <option value="PENDING">Pendente</option>
               <option value="REFUNDED">Estornado</option>
             </select>
@@ -679,6 +688,7 @@ export const ReservationsPage: React.FC<{ onNavigate: (path: string) => void }> 
           setSelectedResForPayment(null);
         }}
         reservation={selectedResForPayment}
+        pendingAmount={selectedResForPayment ? Math.max(0, selectedResForPayment.amount - (paidByReservation.get(selectedResForPayment.id) || 0)) : undefined}
         onPaymentSuccess={() => {
           setActionFeedback({
             type: 'success',

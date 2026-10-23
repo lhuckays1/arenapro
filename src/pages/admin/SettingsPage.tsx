@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { arenaService } from '../../services/arena.service';
-import { supabase } from '../../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 import { 
   Building2, 
   Clock, 
@@ -190,7 +190,7 @@ export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = ()
       return;
     }
 
-    if (!isConfigured) {
+    if (!isSupabaseConfigured) {
       setErrorMessage('O upload de logo exige o Supabase configurado. Você pode usar uma URL de imagem.');
       setLogoMode('url');
       return;

@@ -13,6 +13,7 @@ import {
 import { PaymentMethod, Reservation } from '../../types';
 import { arenaService } from '../../services/arena.service';
 import { translatePaymentStatus } from '../../utils/translation';
+import { getTodayArenaDate } from '../../utils/agendaDate';
 
 interface RecordPaymentModalProps {
   isOpen: boolean;
@@ -29,19 +30,26 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   pendingAmount: defaultPending,
   onPaymentSuccess,
 }) => {
-  if (!isOpen || !reservation) return null;
-
-  const totalAmount = reservation.amount || 0;
+  const totalAmount = reservation?.amount || 0;
   const initialPending = defaultPending !== undefined ? defaultPending : totalAmount;
 
-  const [amount, setAmount] = useState<number>(initialPending > 0 ? initialPending : totalAmount);
+  const [amount, setAmount] = useState<number>(initialPending);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('PIX');
   const [transactionDate, setTransactionDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
+    getTodayArenaDate()
   );
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  React.useEffect(() => {
+    if (isOpen && reservation) {
+      setAmount(defaultPending ?? reservation.amount);
+      setTransactionDate(getTodayArenaDate());
+      setErrorMsg(null);
+    }
+  }, [isOpen, reservation?.id, defaultPending]);
+
+  if (!isOpen || !reservation) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

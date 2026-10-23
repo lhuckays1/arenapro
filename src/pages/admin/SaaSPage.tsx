@@ -151,7 +151,7 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
       setFeedback({
         type: 'success',
         message: status === 'ACTIVE'
-          ? 'Assinatura ativada. O proprietário já pode acessar o painel.'
+          ? 'Assinatura comercial ativada.'
           : `Assinatura alterada para ${translateSubscriptionStatus(status)}.`,
       });
       await load();
@@ -191,7 +191,7 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
             </div>
             <h1 className="text-2xl md:text-3xl font-black text-white mt-2">Arenas e Assinaturas</h1>
             <p className="text-sm text-slate-400 mt-1 max-w-2xl">
-              Somente o SUPER_ADMIN cria proprietários. Toda nova arena começa com assinatura PENDENTE e só libera a operação após pagamento.
+              Somente o SUPER_ADMIN cria proprietários. A assinatura comercial é controlada separadamente do vínculo operacional ativo.
             </p>
           </div>
           <button
@@ -236,7 +236,7 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
       <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden">
         <div className="p-5 border-b border-slate-800">
           <h2 className="text-sm font-black text-white">Tenants comerciais</h2>
-          <p className="text-xs text-slate-500 mt-1">Acesso operacional depende da assinatura.</p>
+          <p className="text-xs text-slate-500 mt-1">O acesso operacional exige vínculo ativo e permissões da arena.</p>
         </div>
 
         {loading ? (

@@ -2207,10 +2207,7 @@ export const ReservationModal: React.FC<
 
               <select
                 id="res-payment-status"
-                disabled={
-                  mode ===
-                  'view'
-                }
+                disabled
                 value={
                   paymentStatus
                 }
@@ -2244,6 +2241,8 @@ export const ReservationModal: React.FC<
               </select>
 
             </div>
+
+            <p className="text-xs text-slate-400">O status é atualizado pelo recebimento em Reservas ou Financeiro.</p>
 
             {/* PAYMENT METHOD */}
 

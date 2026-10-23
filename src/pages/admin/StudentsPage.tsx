@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { arenaService } from '../../services/arena.service';
+import { getTodayArenaDate } from '../../utils/agendaDate';
 import { EntityStatus, Student, Teacher, TeacherStudent } from '../../types';
 import { Plus, Search, Pencil, UserCheck, UserX, X, GraduationCap, Phone, Mail, CalendarDays, UserRound, Trash2 } from 'lucide-react';
 
@@ -18,11 +19,13 @@ type StudentForm = {
   duration_value: string;
   duration_unit: 'MONTHS' | 'WEEKS';
   monthly_amount: string;
+  generate_payments: boolean;
+  due_day: string;
 };
 
 const emptyForm: StudentForm = {
   full_name: '', phone: '', email: '', birth_date: '', status: 'ACTIVE', notes: '', teacher_id: '',
-  start_date: new Date().toISOString().slice(0, 10), duration_value: '1', duration_unit: 'MONTHS', monthly_amount: '',
+  start_date: getTodayArenaDate(), duration_value: '1', duration_unit: 'MONTHS', monthly_amount: '', generate_payments:true, due_day:'10',
 };
 
 export const StudentsPage: React.FC<StudentsPageProps> = () => {
@@ -81,7 +84,7 @@ export const StudentsPage: React.FC<StudentsPageProps> = () => {
     linked: students.filter(s => !!activeTeacherByStudent[s.id]).length,
   }), [students, activeTeacherByStudent]);
 
-  const openCreate = () => { setEditingStudent(null); setForm(emptyForm); setError(''); setSuccess(''); setIsModalOpen(true); };
+  const openCreate = () => { setEditingStudent(null); setForm({ ...emptyForm, start_date:getTodayArenaDate() }); setError(''); setSuccess(''); setIsModalOpen(true); };
 
   const openEdit = (student: Student) => {
     const link = activeTeacherByStudent[student.id];
@@ -94,72 +97,30 @@ export const StudentsPage: React.FC<StudentsPageProps> = () => {
       duration_value: link?.duration_value ? String(link.duration_value) : '1',
       duration_unit: link?.duration_unit || 'MONTHS',
       monthly_amount: link?.monthly_amount ? String(link.monthly_amount) : '',
+      generate_payments:false, due_day:'10',
     });
     setError(''); setSuccess(''); setIsModalOpen(true);
   };
 
-  const syncTeacher = async (studentId: string, teacherId: string) => {
-    const current = links.find(l => l.student_id === studentId && l.status === 'ACTIVE');
-    if (current?.teacher_id === teacherId) {
-      if (teacherId) {
-        const durationValue = Math.max(1, Number(form.duration_value) || 1);
-        const startDate = form.start_date || new Date().toISOString().slice(0, 10);
-        const end = new Date(`${startDate}T00:00:00`);
-        if (form.duration_unit === 'MONTHS') { end.setMonth(end.getMonth() + durationValue); end.setDate(end.getDate() - 1); }
-        else end.setDate(end.getDate() + durationValue * 7 - 1);
-        await arenaService.updateTeacherStudent(current.id, {
-          start_date: startDate, end_date: end.toISOString().slice(0, 10),
-          duration_value: durationValue, duration_unit: form.duration_unit,
-          monthly_amount: Number(form.monthly_amount) > 0 ? Number(form.monthly_amount) : null,
-        });
-      }
-      return;
-    }
-
-    if (current) {
-      await arenaService.updateTeacherStudent(current.id, { status: 'INACTIVE', end_date: new Date().toISOString().slice(0, 10) });
-    }
-    if (teacherId && activeArena) {
-      const previous = links.find(l => l.student_id === studentId && l.teacher_id === teacherId);
-      const durationValue = Math.max(1, Number(form.duration_value) || 1);
-      const startDate = form.start_date || new Date().toISOString().slice(0, 10);
-      const end = new Date(`${startDate}T00:00:00`);
-      if (form.duration_unit === 'MONTHS') { end.setMonth(end.getMonth() + durationValue); end.setDate(end.getDate() - 1); }
-      else end.setDate(end.getDate() + durationValue * 7 - 1);
-      const enrollment = {
-        status: 'ACTIVE' as EntityStatus, start_date: startDate, end_date: end.toISOString().slice(0, 10),
-        duration_value: durationValue, duration_unit: form.duration_unit,
-        monthly_amount: Number(form.monthly_amount) > 0 ? Number(form.monthly_amount) : null,
-      };
-      if (previous) {
-        await arenaService.updateTeacherStudent(previous.id, enrollment);
-      } else {
-        await arenaService.createTeacherStudent({
-          arena_id: activeArena.id, teacher_id: teacherId, student_id: studentId,
-          ...enrollment, notes: null,
-        });
-      }
-    }
-  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeArena || !form.full_name.trim()) { setError('O nome do aluno é obrigatório.'); return; }
+    const monthlyAmount = Number(form.monthly_amount.replace(',', '.'));
+    if (form.teacher_id && (!Number.isFinite(monthlyAmount) || monthlyAmount <= 0)) { setError('Informe o valor mensal contratado.'); return; }
+    if (form.teacher_id && form.generate_payments && (!Number.isInteger(Number(form.due_day)) || Number(form.due_day) < 1 || Number(form.due_day) > 28)) { setError('Informe o dia do vencimento entre 1 e 28.'); return; }
     setActionLoading(true); setError(''); setSuccess('');
     try {
-      let saved: Student;
       const payload = {
         arena_id: activeArena.id,
         full_name: form.full_name.trim(), phone: form.phone.trim() || null, email: form.email.trim() || null,
         birth_date: form.birth_date || null, status: form.status, notes: form.notes.trim() || null,
       };
-      if (editingStudent) {
-        saved = await arenaService.updateStudent(editingStudent.id, payload);
-      } else {
-        saved = await arenaService.createStudent(payload);
-      }
-      await syncTeacher(saved.id, form.teacher_id);
-      setSuccess(editingStudent ? 'Aluno atualizado com sucesso!' : 'Aluno cadastrado com sucesso!');
+      await arenaService.saveStudentEnrollment(editingStudent?.id || null, payload, form.teacher_id ? {
+        teacher_id:form.teacher_id, start_date:form.start_date, duration_value:Number(form.duration_value),
+        duration_unit:form.duration_unit, monthly_amount:monthlyAmount,
+      } : null, { generate:!!form.teacher_id && form.generate_payments, dueDay:Number(form.due_day) });
+      setSuccess(form.teacher_id && form.generate_payments ? 'Aluno, vínculo e mensalidades salvos com sucesso!' : 'Aluno salvo com sucesso.');
       setIsModalOpen(false);
       await load();
     } catch (err: any) {
@@ -236,7 +197,12 @@ export const StudentsPage: React.FC<StudentsPageProps> = () => {
         <form onSubmit={handleSave} className="mt-5 space-y-4">
           {error && <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-300 px-3 py-2 text-xs">{error}</div>}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3"><Field label="Nome completo *" value={form.full_name} onChange={v => setForm(f => ({...f, full_name:v}))} placeholder="Nome do aluno" /><Field label="Telefone" value={form.phone} onChange={v => setForm(f => ({...f, phone:v}))} placeholder="(00) 00000-0000" /><Field label="E-mail" value={form.email} onChange={v => setForm(f => ({...f, email:v}))} placeholder="aluno@email.com" type="email" /><Field label="Data de nascimento" value={form.birth_date} onChange={v => setForm(f => ({...f, birth_date:v}))} type="date" /><div><label className="text-[11px] font-semibold text-slate-400">Professor responsável</label><select value={form.teacher_id} onChange={e => setForm(f => ({...f, teacher_id:e.target.value}))} className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"><option value="">Sem professor</option>{teachers.filter(t => t.status === 'ACTIVE').map(t => <option key={t.id} value={t.id}>{t.full_name}{t.modality?.name ? ` — ${t.modality.name}` : ''}</option>)}</select></div><div><label className="text-[11px] font-semibold text-slate-400">Status</label><select value={form.status} onChange={e => setForm(f => ({...f, status:e.target.value as EntityStatus}))} className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"><option value="ACTIVE">Ativo</option><option value="INACTIVE">Inativo</option></select></div></div>
-          {form.teacher_id && <div className="rounded-2xl border border-sky-500/20 bg-sky-500/5 p-4"><div className="flex items-center gap-2 mb-3"><CalendarDays className="w-4 h-4 text-sky-300"/><div><p className="text-xs font-bold text-sky-200">Período das aulas</p><p className="text-[10px] text-slate-500">Defina por quanto tempo este aluno fará aulas com o professor.</p></div></div><div className="grid grid-cols-1 sm:grid-cols-4 gap-3"><Field label="Início" value={form.start_date} onChange={v => setForm(f => ({...f, start_date:v}))} type="date" /><Field label="Duração" value={form.duration_value} onChange={v => setForm(f => ({...f, duration_value:v.replace(/\D/g,'')}))} type="number" /><div><label className="text-[11px] font-semibold text-slate-400">Unidade</label><select value={form.duration_unit} onChange={e => setForm(f => ({...f, duration_unit:e.target.value as 'MONTHS'|'WEEKS'}))} className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"><option value="MONTHS">Meses</option><option value="WEEKS">Semanas</option></select></div><Field label="Valor mensal" value={form.monthly_amount} onChange={v => setForm(f => ({...f, monthly_amount:v}))} type="number" /></div></div>}
+          {form.teacher_id && <div className="rounded-2xl border border-sky-500/20 bg-sky-500/5 p-4"><div className="flex items-center gap-2 mb-3"><CalendarDays className="w-4 h-4 text-sky-300"/><div><p className="text-xs font-bold text-sky-200">Período das aulas</p><p className="text-[10px] text-slate-500">Defina por quanto tempo este aluno fará aulas com o professor.</p></div></div><div className="grid grid-cols-1 sm:grid-cols-4 gap-3"><Field label="Início" value={form.start_date} onChange={v => setForm(f => ({...f, start_date:v}))} type="date" /><Field label="Duração" value={form.duration_value} onChange={v => setForm(f => ({...f, duration_value:v}))} type="number" /><div><label className="text-[11px] font-semibold text-slate-400">Unidade</label><select value={form.duration_unit} onChange={e => setForm(f => ({...f, duration_unit:e.target.value as 'MONTHS'|'WEEKS'}))} className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"><option value="MONTHS">Meses</option><option value="WEEKS">Semanas</option></select></div><Field step="0.01" label="Valor mensal" value={form.monthly_amount} onChange={v => setForm(f => ({...f, monthly_amount:v}))} type="number" /></div></div>}
+          {form.teacher_id && <div className="space-y-3 rounded-xl border border-slate-800 p-3">
+            <label className="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={form.generate_payments} onChange={event => setForm(current => ({ ...current, generate_payments:event.target.checked }))} />Gerar mensalidades do período ao salvar</label>
+            {form.generate_payments && <Field label="Dia do vencimento (1 a 28)" type="number" value={form.due_day} onChange={value => setForm(current => ({ ...current, due_day:value }))} />}
+            <p className="text-xs text-slate-500">Um contrato de 3 meses gera 3 competências. Cobranças já existentes são preservadas; editar o cadastro não altera valores já cobrados.</p>
+          </div>}
           <div><label className="text-[11px] font-semibold text-slate-400">Observações</label><textarea value={form.notes} onChange={e => setForm(f => ({...f, notes:e.target.value}))} rows={3} className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500" placeholder="Observações sobre o aluno..." /></div>
           <div className="flex justify-end gap-2 pt-2"><button type="button" disabled={actionLoading} onClick={() => setIsModalOpen(false)} className="px-4 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold cursor-pointer">Cancelar</button><button disabled={actionLoading} type="submit" className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black cursor-pointer">{actionLoading ? 'SALVANDO...' : 'SALVAR ALUNO'}</button></div>
         </form>
@@ -245,4 +211,4 @@ export const StudentsPage: React.FC<StudentsPageProps> = () => {
   );
 };
 
-const Field = ({label, value, onChange, placeholder, type='text'}: {label:string; value:string; onChange:(v:string)=>void; placeholder?:string; type?:string}) => <div><label className="text-[11px] font-semibold text-slate-400">{label}</label><div className="relative mt-1">{type === 'date' ? <CalendarDays className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" /> : type === 'email' ? <Mail className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" /> : label === 'Telefone' ? <Phone className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" /> : <UserRound className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />}<input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500" /></div></div>;
+const Field = ({label, value, onChange, placeholder, type='text', step}: {label:string; value:string; onChange:(v:string)=>void; placeholder?:string; type?:string; step?:string}) => <div><label className="text-[11px] font-semibold text-slate-400">{label}</label><div className="relative mt-1">{type === 'date' ? <CalendarDays className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" /> : type === 'email' ? <Mail className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" /> : label === 'Telefone' ? <Phone className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" /> : <UserRound className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />}<input step={step} type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500" /></div></div>;

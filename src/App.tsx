@@ -54,8 +54,8 @@ const AppContent: React.FC = () => {
     user,
     profile,
     activeArena,
-    activeSubscription,
-    subscriptionLoading,
+    operationalAccess,
+    operationalAccessLoading,
     loading,
   } = useAuth();
 
@@ -480,11 +480,11 @@ const AppContent: React.FC = () => {
 
 
     // ========================================================
-    // CONTROLE DE ASSINATURA
+    // CONTROLE DE ACESSO OPERACIONAL
     //
     // SUPER_ADMIN não depende de assinatura.
     //
-    // ARENA_ADMIN / ARENA_STAFF precisam de ACTIVE.
+    // ARENA_ADMIN / ARENA_STAFF precisam de vínculo ativo validado no servidor.
     // ========================================================
 
     if (
@@ -508,12 +508,12 @@ const AppContent: React.FC = () => {
       // Verificando assinatura
       // ------------------------------------------------------
 
-      if (subscriptionLoading) {
+      if (operationalAccessLoading) {
 
         return (
           <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400 text-sm">
 
-            Verificando assinatura da arena...
+            Verificando acesso à arena...
 
           </div>
         );
@@ -525,8 +525,7 @@ const AppContent: React.FC = () => {
       // ------------------------------------------------------
 
       if (
-        !activeSubscription ||
-        activeSubscription.status !== 'ACTIVE'
+        !operationalAccess
       ) {
 
         return (

@@ -378,27 +378,9 @@ export const ClientBookingPage: React.FC<ClientBookingPageProps> = ({
         throw new Error('Este horário acabou de ser reservado. Escolha outro horário.');
       }
 
-      // 2. Associate or create Customer without duplication
-      const customer = await arenaService.getOrCreateCustomerForUser(activeArena.id, {
-        id: user.id,
-        email: user.email,
-        full_name: profile.full_name,
-        phone: profile.phone || '(11) 99999-9999',
-      });
-
-      // 3. Create reservation with status CONFIRMED and payment_status PENDING
-      const newReservation = await arenaService.createReservation({
-        arena_id: activeArena.id,
-        court_id: selectedCourtId,
-        customer_id: customer.id,
-        start_at: startAt,
-        end_at: endAt,
-        status: 'CONFIRMED',
-        amount: selectedCourt?.price || 80.0,
-        payment_status: 'PENDING',
-        payment_method: null,
-        notes: 'Reserva realizada via Portal do Cliente Online.',
-        created_by: user.id,
+      const newReservation = await arenaService.createClientReservation({
+        arenaId:activeArena.id, courtId:selectedCourtId, startAt, endAt,
+        user:{ id:user.id, email:user.email, full_name:profile.full_name, phone:profile.phone || undefined },
       });
 
       setCreatedReservation(newReservation);

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { paymentRequestKey, completePaymentRequest } from '../../utils/paymentRequest';
 import { AlertCircle, Beer, CheckCircle2, ClipboardList, Pencil, Power, Plus, RefreshCw, Search, ShoppingBag, Trash2, X, Wallet } from 'lucide-react';
 
 type Product = { id: string; name: string; category: string; price: number; active: boolean };
@@ -10,16 +11,9 @@ type Tab = { id: string; tab_number: number; customer_name: string; reservation_
 type Item = { id: string; product_id: string | null; product_name: string; quantity: number; unit_price: number; subtotal: number };
 type PaymentMethod = 'PIX'|'CASH'|'DEBIT_CARD'|'CREDIT_CARD'|'BANK_TRANSFER'|'OTHER';
 const money = (n: number) => new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(n)||0);
-// Em HTTP na rede local, crypto.randomUUID pode não existir. Mantemos uma chave UUID
-// para idempotência sem bloquear o registro do pagamento.
-const createRequestUuid = (): string => {
-  const cryptoObj = globalThis.crypto as Crypto & { randomUUID?: () => string };
-  if (typeof cryptoObj?.randomUUID === 'function') return cryptoObj.randomUUID();
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = Math.floor(Math.random() * 16);
-    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
-  });
-};
+function unwrapRelation<Related>(value: Related | Related[] | null | undefined): Related | null {
+  return Array.isArray(value) ? value[0] || null : value || null;
+}
 
 const methods: {value:PaymentMethod;label:string}[] = [{value:'PIX',label:'PIX'},{value:'CASH',label:'Dinheiro'},{value:'DEBIT_CARD',label:'Cartão de débito'},{value:'CREDIT_CARD',label:'Cartão de crédito'},{value:'BANK_TRANSFER',label:'Transferência / TED'},{value:'OTHER',label:'Outro'}];
 
@@ -67,7 +61,7 @@ export const BarComandasPage: React.FC<{onNavigate:(path:string)=>void}> = () =>
         supabase.from('reservations').select('id,start_at,end_at,customer_id,court_id,customer:customers(full_name),court:courts(name)').eq('arena_id',activeArena.id).in('status',['PENDING','CONFIRMED']).order('start_at',{ascending:false}).limit(100),
       ]);
       for (const result of [p,t,c,r]) if (result.error) throw result.error;
-      setProducts((p.data||[]) as Product[]); setTabs((t.data||[]) as Tab[]); setCourts((c.data||[]) as Court[]); setReservations((r.data||[]) as Reservation[]);
+      setProducts((p.data||[]) as Product[]); setTabs((t.data||[]).map(row=>({...row,court:unwrapRelation(row.court)}))); setCourts((c.data||[]) as Court[]); setReservations((r.data||[]).map(row=>({...row,customer:unwrapRelation(row.customer),court:unwrapRelation(row.court)})));
     } catch (e:any) { setError(e?.message || 'Não foi possível carregar as comandas. Execute a migração SQL do módulo Bar no Supabase.'); }
     finally { setLoading(false); }
   },[activeArena]);
@@ -140,8 +134,8 @@ export const BarComandasPage: React.FC<{onNavigate:(path:string)=>void}> = () =>
     const {data,error:err}=await supabase.from('bar_tabs').insert({arena_id:activeArena.id,customer_name:name,reservation_id:reservationId||null,court_id:reservationId?(selectedReservation?.court_id||null):(courtId||null),notes:tabNotes.trim()||null,opened_by:user?.id||null}).select('id').single();
     setBusy(false);if(err){setError(err.message);return;}
     setCustomerName('');setReservationId('');setCourtId('');setTabNotes('');setNotice('Comanda aberta com sucesso.');await load();
-    const opened=(await supabase.from('bar_tabs').select('id,tab_number,customer_name,reservation_id,court_id,status,total_amount,paid_amount,created_at,notes,court:courts(name)').eq('id',data.id).single()).data as Tab|null;
-    if(opened)setEditingTab(opened);
+    const opened=(await supabase.from('bar_tabs').select('id,tab_number,customer_name,reservation_id,court_id,status,total_amount,paid_amount,created_at,notes,court:courts(name)').eq('id',data.id).single()).data;
+    if(opened)setEditingTab({...opened,court:unwrapRelation(opened.court)});
   };
 
   const addItem = async (e:React.FormEvent) => {
@@ -158,8 +152,9 @@ export const BarComandasPage: React.FC<{onNavigate:(path:string)=>void}> = () =>
       supabase.from('bar_tab_items').select('id,product_id,product_name,quantity,unit_price,subtotal').eq('tab_id',id).order('created_at'),
     ]);
     if(tabResult.error){setError(tabResult.error.message);return;}
-    setEditingTab({...tabResult.data,items:(itemResult.data||[]) as Item[]} as Tab);
-    setTabs(prev=>prev.map(t=>t.id===id?{...t,...tabResult.data}:t));
+    if(itemResult.error){setError(itemResult.error.message);return;}
+    setEditingTab({...tabResult.data,court:unwrapRelation(tabResult.data.court),items:(itemResult.data||[]) as Item[]});
+    setTabs(prev=>prev.map(t=>t.id===id?{...t,...tabResult.data,court:unwrapRelation(tabResult.data.court)}:t));
   };
 
   const removeItem = async (item:Item) => {
@@ -174,9 +169,11 @@ export const BarComandasPage: React.FC<{onNavigate:(path:string)=>void}> = () =>
     const balance=Number(editingTab.total_amount)-Number(editingTab.paid_amount);
     if(!Number.isFinite(amount)||amount<=0||amount>balance+0.001){setError(`Informe um valor entre R$ 0,01 e ${money(balance)}.`);return;}
     setBusy(true);setError('');
-    const requestKey=createRequestUuid();
+    const scope=`bar:${editingTab.id}`;
+    const requestKey=paymentRequestKey(scope,{amount,method:paymentMethod,notes:paymentNotes.trim()||null});
     const {error:err}=await supabase.rpc('register_bar_tab_payment',{p_tab_id:editingTab.id,p_amount:amount,p_payment_method:paymentMethod,p_request_key:requestKey,p_notes:paymentNotes.trim()||null});
     setBusy(false);if(err){setError(err.message);return;}
+    completePaymentRequest(scope);
     setPaymentAmount('');setPaymentNotes('');setNotice('Pagamento registrado e lançado no financeiro uma única vez.');await load();await loadTab(editingTab.id);
   };
 

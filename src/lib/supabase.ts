@@ -30,9 +30,9 @@ const STORAGE_PREFIX = 'arenapro_db_';
 function getStorage<T>(key: string, fallback: T): T {
   try {
     const item = localStorage.getItem(STORAGE_PREFIX + key);
-    return item ? JSON.parse(item) : fallback;
+    return item ? JSON.parse(item) : structuredClone(fallback);
   } catch {
-    return fallback;
+    return structuredClone(fallback);
   }
 }
 
@@ -40,7 +40,7 @@ function setStorage<T>(key: string, value: T): void {
   try {
     localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
   } catch (e) {
-    console.error('Failed to persist to localStorage', e);
+    throw new Error('Não foi possível salvar os dados locais. Verifique o armazenamento do navegador.', { cause:e });
   }
 }
 
@@ -1124,6 +1124,11 @@ export const sandboxDB = {
     }));
   },
   setReservations: (data: Reservation[]) => setStorage('reservations', data),
+  setArenaReservations: (arenaId: string, data: Reservation[]) => {
+    if (data.some(reservation => reservation.arena_id !== arenaId)) throw new Error('Reserva de outra arena.');
+    const otherArenas = getStorage('reservations', INITIAL_RESERVATIONS).filter(reservation => reservation.arena_id !== arenaId);
+    setStorage('reservations', [...otherArenas, ...data]);
+  },
   updateReservation: (id: string, updates: Partial<Reservation>): Reservation => {
     const list = getStorage('reservations', INITIAL_RESERVATIONS);
     const idx = list.findIndex(r => r.id === id);

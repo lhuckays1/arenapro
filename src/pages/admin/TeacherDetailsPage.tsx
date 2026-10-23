@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { arenaService } from '../../services/arena.service';
+import { getTodayArenaDate } from '../../utils/agendaDate';
 import { PaymentMethod, Student, StudentPayment, Teacher, TeacherStudent } from '../../types';
 import { ArrowLeft, CalendarDays, CheckCircle2, CircleDollarSign, CreditCard, Mail, Phone, Plus, ReceiptText, Save, Trash2, UserPlus, UserRound, UsersRound, X, XCircle } from 'lucide-react';
 
@@ -8,7 +9,7 @@ interface TeacherDetailsPageProps { teacherId: string; onNavigate: (path: string
 
 const money = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const date = (value?: string | null) => value ? new Date(`${value.slice(0,10)}T12:00:00`).toLocaleDateString('pt-BR') : '-';
-const today = () => new Date().toISOString().slice(0, 10);
+const today = getTodayArenaDate;
 const currentMonth = () => `${today().slice(0, 7)}-01`;
 const methodLabel: Record<PaymentMethod, string> = { PIX: 'PIX', CREDIT_CARD: 'Cartão de crédito', DEBIT_CARD: 'Cartão de débito', CASH: 'Dinheiro', BANK_TRANSFER: 'Transferência', OTHER: 'Outro' };
 

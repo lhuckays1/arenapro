@@ -1,6 +1,7 @@
 import { supabase, isSupabaseConfigured, sandboxDB } from '../lib/supabase';
 import { 
   Arena, 
+  EntityStatus,
   Court, 
   Customer, 
   Modality, 
@@ -25,7 +26,10 @@ import {
   PendingReservationItem,
   Teacher, Student, TeacherStudent, StudentPayment, StudentPaymentStatus
 } from '../types';
-import { buildArenaDateTime, getArenaHour, getTodayArenaDate } from '../utils/agendaDate';
+import { buildArenaDateTime, getArenaHour, getTodayArenaDate, getArenaDate } from '../utils/agendaDate';
+import { enrollmentEndDate } from '../utils/enrollment';
+import { paymentRequestKey, completePaymentRequest } from '../utils/paymentRequest';
+import { sandboxTransaction } from '../utils/sandboxTransaction';
 
 export const arenaService = {
   // 1. ARENAS
@@ -327,11 +331,7 @@ export const arenaService = {
   ): Promise<Customer> {
     const customers = await this.getCustomers(arenaId);
     // Find customer by user_id or matching email/phone
-    const existing = customers.find(c =>
-      (c.user_id && c.user_id === userData.id) ||
-      (userData.email && c.email && c.email.toLowerCase() === userData.email.toLowerCase()) ||
-      (userData.phone && c.phone && c.phone.replace(/\D/g, '') === userData.phone.replace(/\D/g, ''))
-    );
+    const existing = customers.find(customer => customer.user_id === userData.id);
 
     if (existing) {
       // Ensure user_id is linked if it was not
@@ -448,6 +448,51 @@ export const arenaService = {
     return item;
   },
 
+  async saveStudentEnrollment(
+    studentId: string | null,
+    student: Omit<Student, 'id' | 'created_at' | 'updated_at'>,
+    enrollment: { teacher_id: string; start_date: string; duration_value: number; duration_unit: 'MONTHS' | 'WEEKS'; monthly_amount: number } | null,
+    billing: { generate: boolean; dueDay: number } = { generate:false, dueDay:10 }
+  ): Promise<Student> {
+    if (!student.full_name.trim()) throw new Error('O nome do aluno é obrigatório.');
+    if (billing.generate && student.status !== 'ACTIVE') throw new Error('Ative o aluno antes de gerar mensalidades.');
+    const endDate = enrollment ? enrollmentEndDate(enrollment.start_date, enrollment.duration_value, enrollment.duration_unit) : null;
+    if (enrollment && (!Number.isFinite(enrollment.monthly_amount) || enrollment.monthly_amount <= 0)) {
+      throw new Error('Informe um valor mensal maior que zero para o vínculo.');
+    }
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.rpc('save_student_enrollment', {
+        p_arena_id: student.arena_id, p_student_id: studentId, p_student: student, p_enrollment: enrollment,
+        p_generate_payments:billing.generate, p_due_day:billing.dueDay,
+      });
+      if (error) throw error;
+      return data as Student;
+    }
+    const arenaId = student.arena_id;
+    return sandboxTransaction([`arenapro_students_${arenaId}`, `arenapro_teacher_students_${arenaId}`, `arenapro_student_payments_${arenaId}`], async () => {
+      if (enrollment && !(await this.getTeachers(arenaId)).some(teacher => teacher.id === enrollment.teacher_id && teacher.status === 'ACTIVE')) {
+        throw new Error('Professor ativo não encontrado nesta arena.');
+      }
+      if (studentId && !(await this.getStudents(arenaId)).some(item => item.id === studentId)) throw new Error('Aluno não encontrado nesta arena.');
+      const saved = studentId ? await this.updateStudent(studentId, student) : await this.createStudent(student);
+      const links = await this.getTeacherStudents(arenaId);
+      const previous = links.find(link => link.student_id === saved.id && link.teacher_id === enrollment?.teacher_id);
+      for (const link of links.filter(link => link.student_id === saved.id && link.status === 'ACTIVE' && link.id !== previous?.id)) {
+        await this.updateTeacherStudent(link.id, { status:'INACTIVE' });
+      }
+      if (enrollment) {
+        const payload = { ...enrollment, end_date:endDate, status:'ACTIVE' as EntityStatus };
+        if (previous) await this.updateTeacherStudent(previous.id, payload);
+        else await this.createTeacherStudent({ ...payload, arena_id:arenaId, student_id:saved.id, notes:null });
+        if (billing.generate) {
+          const result = await this.generateRecurringStudentPayments(arenaId, { referenceMonth:enrollment.start_date.slice(0,7), dueDay:billing.dueDay, studentIds:[saved.id], teacherId:enrollment.teacher_id });
+          if (result.failed) throw new Error(result.errors.join(' '));
+        }
+      }
+      return saved;
+    });
+  },
+
   async deleteStudent(id: string): Promise<void> {
     if (isSupabaseConfigured) {
       const { error } = await supabase.from('students').delete().eq('id', id);
@@ -494,7 +539,11 @@ export const arenaService = {
       if (error) throw error;
       return data || [];
     }
-    return JSON.parse(localStorage.getItem(`arenapro_teacher_students_${arenaId}`) || '[]');
+    const links: TeacherStudent[] = JSON.parse(localStorage.getItem(`arenapro_teacher_students_${arenaId}`) || '[]');
+    const [teachers, students] = await Promise.all([this.getTeachers(arenaId), this.getStudents(arenaId)]);
+    return links.filter(link => !teacherId || link.teacher_id === teacherId).map(link => ({ ...link,
+      teacher:teachers.find(teacher => teacher.id === link.teacher_id), student:students.find(student => student.id === link.student_id),
+    }));
   },
 
   async createTeacherStudent(link: Omit<TeacherStudent, 'id' | 'created_at' | 'updated_at' | 'teacher' | 'student'>): Promise<TeacherStudent> {
@@ -520,7 +569,17 @@ export const arenaService = {
       if (error) throw error;
       return data;
     }
-    throw new Error('Atualização de vínculo disponível apenas com Supabase configurado.');
+    for (const arena of await this.getArenas()) {
+      const links = await this.getTeacherStudents(arena.id);
+      const index = links.findIndex(link => link.id === id);
+      if (index < 0) continue;
+      const { teacher, student, ...payload } = updates;
+      const updated = { ...links[index], ...payload, updated_at:new Date().toISOString() };
+      links[index] = updated;
+      localStorage.setItem(`arenapro_teacher_students_${arena.id}`, JSON.stringify(links));
+      return updated;
+    }
+    throw new Error('Vínculo não encontrado.');
   },
 
   async getStudentPayments(arenaId: string, filters?: { teacherId?: string; studentId?: string; month?: string }): Promise<StudentPayment[]> {
@@ -533,10 +592,14 @@ export const arenaService = {
       if (error) throw error;
       return data || [];
     }
-    return JSON.parse(localStorage.getItem(`arenapro_student_payments_${arenaId}`) || '[]');
+    const payments: StudentPayment[] = JSON.parse(localStorage.getItem(`arenapro_student_payments_${arenaId}`) || '[]');
+    const [teachers, students] = await Promise.all([this.getTeachers(arenaId), this.getStudents(arenaId)]);
+    return payments.filter(payment => (!filters?.teacherId || payment.teacher_id === filters.teacherId) && (!filters?.studentId || payment.student_id === filters.studentId) && (!filters?.month || payment.reference_month.slice(0,7) === filters.month.slice(0,7)))
+      .map(payment => ({ ...payment,teacher:teachers.find(teacher => teacher.id === payment.teacher_id),student:students.find(student => student.id === payment.student_id) }));
   },
 
   async createStudentPayment(payment: Omit<StudentPayment, 'id' | 'created_at' | 'updated_at' | 'teacher' | 'student'>): Promise<StudentPayment> {
+    if (!Number.isFinite(payment.amount) || payment.amount <= 0) throw new Error('Informe um valor mensal maior que zero.');
     if (isSupabaseConfigured) {
       const { data, error } = await supabase.from('student_payments').insert([{
         ...payment,
@@ -546,8 +609,9 @@ export const arenaService = {
       if (error) throw error;
       return data;
     }
-    const item = { ...payment, id: crypto.randomUUID(), created_at: new Date().toISOString(), updated_at: new Date().toISOString() } as StudentPayment;
     const list = await this.getStudentPayments(payment.arena_id);
+    if (list.some(item => item.student_id === payment.student_id && item.teacher_id === payment.teacher_id && item.reference_month.slice(0,7) === payment.reference_month.slice(0,7))) throw new Error('Já existe mensalidade nesta competência para o aluno e professor.');
+    const item = { ...payment, id: crypto.randomUUID(), created_at: new Date().toISOString(), updated_at: new Date().toISOString() } as StudentPayment;
     localStorage.setItem(`arenapro_student_payments_${payment.arena_id}`, JSON.stringify([...list, item]));
     return item;
   },
@@ -563,7 +627,17 @@ export const arenaService = {
       notes?: string | null;
     }
   ): Promise<{ created: number; skipped: number; failed: number; errors: string[] }> {
-    const dueDay = Math.min(Math.max(Number(params.dueDay) || 1, 1), 28);
+    if (!Number.isInteger(params.dueDay) || params.dueDay < 1 || params.dueDay > 28) throw new Error('O vencimento deve estar entre 1 e 28.');
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.rpc('generate_student_enrollment_payments', {
+        p_arena_id:arenaId, p_reference_month:`${params.referenceMonth.slice(0,7)}-01`, p_due_day:params.dueDay,
+        p_teacher_id:params.teacherId || null, p_student_ids:params.studentIds || null,
+        p_default_amount:params.defaultAmount || null, p_notes:params.notes || null,
+      });
+      if (error) throw error;
+      return data;
+    }
+    const dueDay = params.dueDay;
     const defaultAmount = Number(params.defaultAmount || 0);
     const selectedIds = params.studentIds?.length ? new Set(params.studentIds) : null;
 
@@ -611,9 +685,7 @@ export const arenaService = {
       const start = new Date(`${link.start_date}T00:00:00`);
       let end: Date | null = link.end_date ? new Date(`${link.end_date}T00:00:00`) : null;
       if (!end && link.duration_value && link.duration_unit) {
-        end = new Date(start);
-        if (link.duration_unit === 'MONTHS') end.setMonth(end.getMonth() + Number(link.duration_value));
-        else end.setDate(end.getDate() + Number(link.duration_value) * 7 - 1);
+        end = new Date(`${enrollmentEndDate(link.start_date, Number(link.duration_value), link.duration_unit)}T00:00:00`);
       }
       if (!end) {
         const requested = new Date(`${params.referenceMonth.slice(0, 7)}-01T00:00:00`);
@@ -622,7 +694,9 @@ export const arenaService = {
 
       const requestedMonth = monthStart(new Date(`${params.referenceMonth.slice(0, 7)}-01T00:00:00`));
       const firstMonth = monthStart(start) > requestedMonth ? monthStart(start) : requestedMonth;
-      const lastMonth = monthStart(end);
+      const durationLastMonth = link.duration_unit === 'MONTHS' && link.duration_value
+        ? addMonths(monthStart(start), Number(link.duration_value) - 1) : monthStart(end);
+      const lastMonth = durationLastMonth < monthStart(end) ? durationLastMonth : monthStart(end);
       if (firstMonth > lastMonth) continue;
       const amount = Number(link.monthly_amount || latestAmountByLink.get(`${link.teacher_id}:${link.student_id}`) || defaultAmount);
       if (!(amount > 0)) {
@@ -634,7 +708,8 @@ export const arenaService = {
       for (let cursor = new Date(firstMonth); cursor <= lastMonth; cursor = addMonths(cursor, 1)) {
         const key = `${link.teacher_id}:${link.student_id}:${monthKey(cursor)}`;
         if (existingKeys.has(key)) { skipped += 1; continue; }
-        const dueDate = `${monthKey(cursor)}-${String(Math.min(dueDay, endOfMonth(cursor.getFullYear(), cursor.getMonth()))).padStart(2, '0')}`;
+        const scheduledDueDate = `${monthKey(cursor)}-${String(Math.min(dueDay, endOfMonth(cursor.getFullYear(), cursor.getMonth()))).padStart(2, '0')}`;
+        const dueDate = scheduledDueDate < link.start_date ? link.start_date : scheduledDueDate;
         try {
           await this.createStudentPayment({
             arena_id: arenaId, teacher_id: link.teacher_id, student_id: link.student_id,
@@ -657,11 +732,18 @@ export const arenaService = {
     payment: StudentPayment,
     params: { paymentMethod: PaymentMethod; paidAt?: string; notes?: string; createdBy?: string | null }
   ): Promise<StudentPayment> {
-    if (payment.status === 'PAID' && payment.financial_transaction_id) {
-      return payment;
-    }
-
     const paidAt = params.paidAt || new Date().toISOString();
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.rpc('receive_student_payment', { p_payment_id:payment.id, p_payment_method:params.paymentMethod, p_notes:params.notes || null });
+      if (error) throw error;
+      return { ...payment, ...data };
+    }
+    return sandboxTransaction(['arenapro_db_financial_transactions', `arenapro_student_payments_${payment.arena_id}`], async () => {
+    const current = (await this.getStudentPayments(payment.arena_id)).find(item => item.id === payment.id);
+    if (!current) throw new Error('Mensalidade não encontrada.');
+    if (current.status === 'PAID' && current.financial_transaction_id) return current;
+    if (current.status === 'CANCELLED') throw new Error('Mensalidade cancelada.');
+    payment = current;
     const transaction = await this.createFinancialTransaction({
       arena_id: payment.arena_id,
       type: 'INCOME',
@@ -669,7 +751,7 @@ export const arenaService = {
       description: `Mensalidade - ${payment.student?.full_name || 'Aluno'}${payment.teacher?.full_name ? ` - ${payment.teacher.full_name}` : ''}`,
       amount: payment.amount,
       payment_method: params.paymentMethod,
-      transaction_date: paidAt.slice(0, 10),
+      transaction_date: getArenaDate(paidAt),
       reservation_id: null,
       customer_id: null,
       service_id: null,
@@ -685,6 +767,7 @@ export const arenaService = {
       financial_transaction_id: transaction.id,
       notes: params.notes ?? payment.notes ?? null,
     });
+    });
   },
 
   async updateStudentPayment(id: string, updates: Partial<StudentPayment>): Promise<StudentPayment> {
@@ -695,7 +778,18 @@ export const arenaService = {
       if (error) throw error;
       return data;
     }
-    throw new Error('Atualização de mensalidade disponível apenas com Supabase configurado.');
+    for (const arena of await this.getArenas()) {
+      const list = await this.getStudentPayments(arena.id);
+      const index = list.findIndex(payment => payment.id === id);
+      if (index < 0) continue;
+      if (list[index].status === 'PAID') throw new Error('Mensalidade paga não pode ser editada.');
+      const { teacher, student, ...payload } = updates;
+      const updated = { ...list[index], ...payload, updated_at:new Date().toISOString() };
+      list[index] = updated;
+      localStorage.setItem(`arenapro_student_payments_${arena.id}`, JSON.stringify(list));
+      return updated;
+    }
+    throw new Error('Mensalidade não encontrada.');
   },
 
   // 6. RESERVATIONS & OVERLAP VALIDATION
@@ -710,6 +804,22 @@ export const arenaService = {
       return data || [];
     }
     return sandboxDB.getReservations(arenaId);
+  },
+
+  async createClientReservation(params: {
+    arenaId:string; courtId:string; startAt:string; endAt:string;
+    user:{ id:string; email?:string; full_name?:string; phone?:string };
+  }): Promise<Reservation> {
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.rpc('reserve_public_court', { p_arena_id:params.arenaId, p_court_id:params.courtId, p_start_at:params.startAt, p_end_at:params.endAt });
+      if (error) throw error;
+      return data;
+    }
+    const court = (await this.getCourts(params.arenaId)).find(item => item.id === params.courtId && item.status === 'ACTIVE');
+    if (!court) throw new Error('Quadra indisponível.');
+    const customer = await this.getOrCreateCustomerForUser(params.arenaId, params.user);
+    return this.createReservation({ arena_id:params.arenaId,court_id:court.id,customer_id:customer.id,
+      start_at:params.startAt,end_at:params.endAt,status:'CONFIRMED',amount:court.price,payment_status:'PENDING',created_by:params.user.id });
   },
 
   async createReservation(
@@ -756,7 +866,7 @@ export const arenaService = {
       updated_at: new Date().toISOString(),
     };
     list.push(newRes);
-    sandboxDB.setReservations(list);
+    sandboxDB.setArenaReservations(reservation.arena_id, list);
     const courts = sandboxDB.getCourts(reservation.arena_id);
     const customers = sandboxDB.getCustomers(reservation.arena_id);
     return {
@@ -1012,7 +1122,7 @@ export const arenaService = {
       .filter(r => {
         if (r.status === 'CANCELLED' || r.status === 'NO_SHOW') return false;
         if (!dateStr) return true;
-        return r.start_at.slice(0, 10) === dateStr;
+        return getArenaDate(r.start_at) === dateStr;
       })
       .map(r => ({
         court_id: r.court_id,
@@ -1235,7 +1345,7 @@ export const arenaService = {
 
     // 1. Today's metrics
     const todayReservations = allReservations.filter(r => {
-      const rDate = r.start_at.slice(0, 10);
+      const rDate = getArenaDate(r.start_at);
       return rDate === todayStr;
     });
 
@@ -1253,7 +1363,7 @@ export const arenaService = {
     }, 0);
 
     // Today's blocked duration in hours
-    const todayBlocks = allBlocks.filter(b => b.start_at.slice(0, 10) === todayStr);
+    const todayBlocks = allBlocks.filter(b => getArenaDate(b.start_at) === todayStr);
     const todayBlockedHours = todayBlocks.reduce((sum, b) => {
       const startMs = new Date(b.start_at).getTime();
       const endMs = new Date(b.end_at).getTime();
@@ -1267,7 +1377,7 @@ export const arenaService = {
 
     // 2. Period metrics
     const periodReservations = allReservations.filter(r => {
-      const rDate = r.start_at.slice(0, 10);
+      const rDate = getArenaDate(r.start_at);
       return rDate >= startDate && rDate <= endDate;
     });
 
@@ -1281,7 +1391,7 @@ export const arenaService = {
 
     // New customers in period
     const periodNewCustomersCount = allCustomers.filter(c => {
-      const cDate = c.created_at.slice(0, 10);
+      const cDate = getArenaDate(c.created_at);
       return cDate >= startDate && cDate <= endDate;
     }).length;
 
@@ -1321,7 +1431,7 @@ export const arenaService = {
       const dayParts = dateItem.split('-');
       const label = `${dayOfWeek}, ${dayParts[2]}/${dayParts[1]}`;
 
-      const dayReservations = allReservations.filter(r => r.start_at.slice(0, 10) === dateItem && r.status !== 'CANCELLED');
+      const dayReservations = allReservations.filter(r => getArenaDate(r.start_at) === dateItem && r.status !== 'CANCELLED');
       const dayRevenue = dayReservations.reduce((sum, r) => sum + (r.amount || 0), 0);
 
       const dayReservedHours = dayReservations.reduce((sum, r) => {
@@ -1330,7 +1440,7 @@ export const arenaService = {
         return sum + Math.max(0, (e - s) / 3600000);
       }, 0);
 
-      const dayBlocks = allBlocks.filter(b => b.start_at.slice(0, 10) === dateItem);
+      const dayBlocks = allBlocks.filter(b => getArenaDate(b.start_at) === dateItem);
       const dayBlockedHours = dayBlocks.reduce((sum, b) => {
         const s = new Date(b.start_at).getTime();
         const e = new Date(b.end_at).getTime();
@@ -1378,7 +1488,7 @@ export const arenaService = {
       }, 0);
 
       const courtBlocks = allBlocks.filter(b => {
-        const bDate = b.start_at.slice(0, 10);
+        const bDate = getArenaDate(b.start_at);
         return b.court_id === court.id && bDate >= startDate && bDate <= endDate;
       });
 
@@ -1673,7 +1783,7 @@ export const arenaService = {
   async createFinancialTransaction(
     tx: Omit<FinancialTransaction, 'id' | 'created_at' | 'updated_at' | 'reservation' | 'customer' | 'service' | 'created_by_profile'>
   ): Promise<FinancialTransaction> {
-    if (tx.amount <= 0) {
+    if (!Number.isFinite(tx.amount) || tx.amount <= 0) {
       throw new Error('O valor da transação deve ser maior que zero.');
     }
     const cleanAmount = Math.round(Number(tx.amount) * 100) / 100;
@@ -1725,6 +1835,11 @@ export const arenaService = {
   },
 
   async voidFinancialTransaction(id: string, reason?: string): Promise<FinancialTransaction> {
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.rpc('void_operational_transaction', { p_transaction_id:id, p_reason:reason || null });
+      if (error) throw error;
+      return data;
+    }
     const noteAppend = reason ? ` [Estornado/Anulado: ${reason}]` : ' [Estornado/Anulado]';
     const txList = await this.getFinancialTransactions('');
     const tx = txList.find(t => t.id === id);
@@ -1758,12 +1873,27 @@ export const arenaService = {
     transactionDate?: string;
     notes?: string;
     createdBy?: string;
+    requestKey?: string;
   }): Promise<{ transaction: FinancialTransaction; reservation: Reservation }> {
-    if (params.amount <= 0) {
+    if (!Number.isFinite(params.amount) || params.amount <= 0) {
       throw new Error('O valor do pagamento deve ser superior a R$ 0,00.');
     }
 
     const cleanPaymentAmount = Math.round(Number(params.amount) * 100) / 100;
+    if (cleanPaymentAmount <= 0) throw new Error('O valor mínimo é R$ 0,01.');
+    if (isSupabaseConfigured) {
+      const scope = `reservation:${params.reservationId}`;
+      const transactionDate = params.transactionDate || getTodayArenaDate();
+      const requestKey = params.requestKey || paymentRequestKey(scope, { amount:cleanPaymentAmount, method:params.paymentMethod, transactionDate, notes:params.notes || null });
+      const { data, error } = await supabase.rpc('receive_reservation_payment', {
+        p_reservation_id:params.reservationId, p_amount:cleanPaymentAmount, p_payment_method:params.paymentMethod,
+        p_request_key:requestKey, p_transaction_date:transactionDate, p_notes:params.notes || null,
+      });
+      if (error) throw error;
+      completePaymentRequest(scope);
+      return data;
+    }
+    return sandboxTransaction(['arenapro_db_financial_transactions', 'arenapro_db_reservations'], async () => {
 
     // Busca a reserva diretamente pelo ID.
     // NÃO usar getReservations(''): arena_id é UUID e uma string vazia
@@ -1795,9 +1925,10 @@ export const arenaService = {
     const totalPaidAfter = Math.round((totalPaidBefore + cleanPaymentAmount) * 100) / 100;
 
     const reservationPrice = Math.round(reservation.amount * 100) / 100;
+    if (reservation.status === 'CANCELLED' || totalPaidAfter > reservationPrice) throw new Error('Pagamento excede o saldo ou a reserva está cancelada.');
     const newPaymentStatus = totalPaidAfter >= reservationPrice ? 'PAID' : 'PARTIAL';
 
-    const txDate = params.transactionDate || new Date().toISOString().split('T')[0];
+    const txDate = params.transactionDate || getTodayArenaDate();
 
     // 1. Create financial transaction
     const customerName = reservation.customer?.full_name || 'Cliente';
@@ -1824,6 +1955,7 @@ export const arenaService = {
     });
 
     return { transaction, reservation: updatedReservation };
+    });
   },
 
   async getPendingReservations(arenaId: string): Promise<PendingReservationItem[]> {
@@ -1866,9 +1998,10 @@ export const arenaService = {
   calculateDateRange(
     period: PeriodFilter = 'MONTH',
     customStart?: string,
-    customEnd?: string
+    customEnd?: string,
+    referenceDate = getTodayArenaDate()
   ): { startDate: string; endDate: string } {
-    const now = new Date();
+    const now = new Date(`${referenceDate}T12:00:00`);
 
     // Utiliza a data local da aplicação para o fechamento diário.
     const pad = (value: number) => String(value).padStart(2, '0');
@@ -1911,7 +2044,8 @@ export const arenaService = {
         const dayOfWeek = start.getDay(); // 0 = domingo
         const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
         start.setDate(start.getDate() - daysFromMonday);
-        end.setDate(start.getDate() + 6);
+        end.setTime(start.getTime());
+        end.setDate(end.getDate() + 6);
         break;
       }
 
@@ -1985,7 +2119,7 @@ export const arenaService = {
 
     // Faturamento = Soma do valor de todas as reservas válidas não-canceladas da arena no período + receitas avulsas não vinculadas a reservas
     const validReservationsInPeriod = allReservations.filter(r => {
-      const rDate = r.start_at.split('T')[0];
+      const rDate = getArenaDate(r.start_at);
       return rDate >= startDate && rDate <= endDate && r.status !== 'CANCELLED';
     });
 

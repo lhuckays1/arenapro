@@ -121,8 +121,10 @@ export const FinancePage: React.FC<{ onNavigate: (path: string) => void }> = ({ 
 
   // Filtered transactions for statement view
   const filteredTransactions = allTransactions.filter(t => {
+    if (!summary || t.transaction_date < summary.startDate || t.transaction_date > summary.endDate) return false;
     if (filterType !== 'ALL' && t.type !== filterType) return false;
-    if (filterCategory !== 'ALL' && t.category !== filterCategory) return false;
+    const category = t.category === 'Bar / Comandas' ? 'BAR' : t.category;
+    if (filterCategory !== 'ALL' && category !== filterCategory) return false;
     if (searchTerm) {
       const q = searchTerm.toLowerCase();
       const matchDesc = t.description.toLowerCase().includes(q);
