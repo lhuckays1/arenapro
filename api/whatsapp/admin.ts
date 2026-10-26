@@ -125,8 +125,17 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         instanceResponse = await evolutionRequest(
           `/instance/connectionState/${encodeURIComponent(instanceName)}`,
         );
-      } catch {
-        instanceResponse = null;
+      } catch (stateError) {
+        if (!(stateError instanceof ApiError) || stateError.upstreamStatusCode !== 404) {
+          throw stateError;
+        }
+
+        // The database row can outlive a failed first attempt. Recreate the
+        // provider instance when its connection-state endpoint confirms a 404.
+        instanceResponse = await evolutionRequest('/instance/create', {
+          method: 'POST',
+          body: { instanceName, qrcode: true, integration: 'WHATSAPP-BAILEYS' },
+        });
       }
       if (getConnectionState(instanceResponse) !== 'open') {
         instanceResponse = await evolutionRequest(

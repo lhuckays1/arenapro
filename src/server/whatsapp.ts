@@ -80,7 +80,11 @@ export async function requireArenaAdmin(
 }
 
 export class ApiError extends Error {
-  constructor(public readonly statusCode: number, message: string) {
+  constructor(
+    public readonly statusCode: number,
+    message: string,
+    public readonly upstreamStatusCode?: number,
+  ) {
     super(message);
     this.name = 'ApiError';
   }
@@ -113,10 +117,12 @@ export async function evolutionRequest<T = unknown>(
   let parsed: unknown = null;
   try { parsed = responseText ? JSON.parse(responseText) : null; } catch { parsed = responseText; }
   if (!response.ok) {
-    const message = isRecord(parsed) && typeof parsed.message === 'string'
-      ? parsed.message
-      : `Evolution API respondeu com HTTP ${response.status}.`;
-    throw new ApiError(502, message.slice(0, 300));
+    const method = options.method || 'GET';
+    throw new ApiError(
+      502,
+      `Evolution API respondeu com HTTP ${response.status} ao acessar ${method} ${path}.`,
+      response.status,
+    );
   }
   return parsed as T;
 }
