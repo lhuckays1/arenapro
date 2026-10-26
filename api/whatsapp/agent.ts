@@ -54,28 +54,19 @@ function isIsoDate(value: string): boolean {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
-function shiftIsoDate(value: string, days: number): string {
-  const parsed = new Date(`${value}T00:00:00.000Z`);
-  parsed.setUTCDate(parsed.getUTCDate() + days);
-  return parsed.toISOString().slice(0, 10);
-}
-
-function localSlotDateTime(value: unknown, timezone: string): { date: string; time: string } | null {
+function localSlotTime(value: unknown, timezone: string): string | null {
   if (typeof value !== 'string') return null;
   const instant = new Date(value);
   if (Number.isNaN(instant.getTime())) return null;
   const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
     hourCycle: 'h23',
   }).formatToParts(instant);
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  if (!values.year || !values.month || !values.day || !values.hour || !values.minute) return null;
-  return { date: `${values.year}-${values.month}-${values.day}`, time: `${values.hour}:${values.minute}` };
+  if (!values.hour || !values.minute) return null;
+  return `${values.hour}:${values.minute}`;
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
@@ -133,40 +124,33 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       let courtId: string;
       let startAt: string;
 
-      const hasSlotDetails = ['slotDate', 'time', 'courtName', 'modality']
+      const hasSlotDetails = ['availabilityDate', 'time', 'courtName', 'modality']
         .some((field) => body[field] !== undefined);
       if (hasSlotDetails) {
-        const slotDate = requiredString(body.slotDate, 'slotDate', 10);
+        const availabilityDate = requiredString(body.availabilityDate, 'availabilityDate', 10);
         const time = requiredString(body.time, 'time', 5);
         const courtName = requiredString(body.courtName, 'courtName', 120);
         const modality = requiredString(body.modality, 'modality', 120);
-        if (!isIsoDate(slotDate) || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+        if (!isIsoDate(availabilityDate) || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) {
           throw new ApiError(400, 'Data ou horário local inválido.');
         }
 
-        const currentLocal = localSlotDateTime(new Date().toISOString(), timezone);
-        if (!currentLocal) throw new ApiError(500, 'Não foi possível validar o fuso horário da arena.');
-        const availabilityDates = [slotDate];
-        if (slotDate > currentLocal.date) availabilityDates.push(shiftIsoDate(slotDate, -1));
+        const { data: availability, error: availabilityError } = await supabase.rpc('whatsapp_get_availability', {
+          p_instance_name: instanceName,
+          p_token_hash: tokenHash,
+          p_date: availabilityDate,
+        });
+        if (availabilityError) throw new ApiError(409, availabilityError.message.slice(0, 250));
 
         const matchingSlots = new Map<string, JsonRecord>();
-        for (const availabilityDate of availabilityDates) {
-          const { data: availability, error: availabilityError } = await supabase.rpc('whatsapp_get_availability', {
-            p_instance_name: instanceName,
-            p_token_hash: tokenHash,
-            p_date: availabilityDate,
-          });
-          if (availabilityError) throw new ApiError(409, availabilityError.message.slice(0, 250));
-          if (!Array.isArray(availability)) continue;
-
+        if (Array.isArray(availability)) {
           for (const slot of availability) {
             if (!isRecord(slot)) continue;
             if (
               normalizeSlotLabel(slot.court_name) !== normalizeSlotLabel(courtName) ||
-              normalizeSlotLabel(slot.modality) !== normalizeSlotLabel(modality)
+              normalizeSlotLabel(slot.modality) !== normalizeSlotLabel(modality) ||
+              localSlotTime(slot.start_at, timezone) !== time
             ) continue;
-            const local = localSlotDateTime(slot.start_at, timezone);
-            if (local?.date !== slotDate || local.time !== time) continue;
             if (typeof slot.court_id !== 'string' || typeof slot.start_at !== 'string') continue;
             matchingSlots.set(`${slot.court_id}|${slot.start_at}`, slot);
           }
