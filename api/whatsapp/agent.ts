@@ -1,4 +1,4 @@
-import type { ApiRequest, ApiResponse, JsonRecord } from '../../src/server/whatsapp';
+import type { ApiRequest, ApiResponse, JsonRecord } from '../../src/server/whatsapp.js';
 import {
   ApiError,
   evolutionRequest,
@@ -9,7 +9,7 @@ import {
   normalizePhone,
   requestBody,
   sha256,
-} from '../../src/server/whatsapp';
+} from '../../src/server/whatsapp.js';
 
 function requiredString(value: unknown, name: string, maxLength = 200): string {
   if (typeof value !== 'string' || !value.trim() || value.length > maxLength) {

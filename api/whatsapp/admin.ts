@@ -1,4 +1,4 @@
-import type { ApiRequest, ApiResponse } from '../../src/server/whatsapp';
+import type { ApiRequest, ApiResponse } from '../../src/server/whatsapp.js';
 import {
   ApiError,
   evolutionRequest,
@@ -11,7 +11,7 @@ import {
   requestBody,
   sha256,
   toConnectionStatus,
-} from '../../src/server/whatsapp';
+} from '../../src/server/whatsapp.js';
 
 const WEBHOOK_EVENTS = ['MESSAGES_UPSERT', 'CONNECTION_UPDATE'];
 
