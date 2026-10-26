@@ -145,15 +145,17 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }
     }
 
-    await evolutionRequest(`/event/webhook/set/${encodeURIComponent(instanceName)}`, {
+    await evolutionRequest(`/webhook/set/${encodeURIComponent(instanceName)}`, {
       method: 'POST',
       body: {
-        enabled: true,
-        url: getWebhookUrl(),
-        webhookByEvents: false,
-        webhookBase64: false,
-        events: WEBHOOK_EVENTS,
-        headers: { 'X-ArenaPro-Webhook': token },
+        webhook: {
+          enabled: true,
+          url: getWebhookUrl(),
+          byEvents: false,
+          base64: false,
+          events: WEBHOOK_EVENTS,
+          headers: { 'X-ArenaPro-Webhook': token },
+        },
       },
     });
 
