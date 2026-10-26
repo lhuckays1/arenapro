@@ -21,17 +21,61 @@ function requiredString(value: unknown, name: string, maxLength = 200): string {
 async function requireInstance(
   instanceName: string,
   tokenHash: string,
-): Promise<{ supabase: ReturnType<typeof getSupabaseClient>; arenaId: string }> {
+): Promise<{ supabase: ReturnType<typeof getSupabaseClient>; arenaId: string; timezone: string }> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase.rpc('whatsapp_authorize_instance', {
     p_instance_name: instanceName,
     p_token_hash: tokenHash,
   });
   if (error) throw new ApiError(500, 'Não foi possível validar a conexão do WhatsApp.');
-  if (!Array.isArray(data) || data.length !== 1 || !isRecord(data[0]) || typeof data[0].arena_id !== 'string') {
+  if (
+    !Array.isArray(data) ||
+    data.length !== 1 ||
+    !isRecord(data[0]) ||
+    typeof data[0].arena_id !== 'string' ||
+    typeof data[0].timezone !== 'string' ||
+    !data[0].timezone.trim()
+  ) {
     throw new ApiError(401, 'Conexão do WhatsApp não autorizada.');
   }
-  return { supabase, arenaId: data[0].arena_id };
+  return { supabase, arenaId: data[0].arena_id, timezone: data[0].timezone };
+}
+
+
+function normalizeSlotLabel(value: unknown): string {
+  return typeof value === 'string'
+    ? value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('pt-BR')
+    : '';
+}
+
+function isIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function shiftIsoDate(value: string, days: number): string {
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  parsed.setUTCDate(parsed.getUTCDate() + days);
+  return parsed.toISOString().slice(0, 10);
+}
+
+function localSlotDateTime(value: unknown, timezone: string): { date: string; time: string } | null {
+  if (typeof value !== 'string') return null;
+  const instant = new Date(value);
+  if (Number.isNaN(instant.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(instant);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  if (!values.year || !values.month || !values.day || !values.hour || !values.minute) return null;
+  return { date: `${values.year}-${values.month}-${values.day}`, time: `${values.hour}:${values.minute}` };
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
@@ -49,7 +93,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       || '';
     if (!/^[a-f0-9]{64}$/i.test(token)) throw new ApiError(401, 'Credencial do webhook inválida.');
     const tokenHash = sha256(token);
-    const { supabase } = await requireInstance(instanceName, tokenHash);
+    const { supabase, timezone } = await requireInstance(instanceName, tokenHash);
     const action = requiredString(body.action, 'action', 40);
 
     if (action === 'authorize') {
@@ -86,8 +130,60 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (action === 'create_offer') {
       const phone = normalizePhone(requiredString(body.senderPhone, 'senderPhone', 40));
       const customerName = requiredString(body.customerName, 'customerName', 120);
-      const courtId = requiredString(body.courtId, 'courtId', 36);
-      const startAt = requiredString(body.startAt, 'startAt', 40);
+      let courtId: string;
+      let startAt: string;
+
+      const hasSlotDetails = ['slotDate', 'time', 'courtName', 'modality']
+        .some((field) => body[field] !== undefined);
+      if (hasSlotDetails) {
+        const slotDate = requiredString(body.slotDate, 'slotDate', 10);
+        const time = requiredString(body.time, 'time', 5);
+        const courtName = requiredString(body.courtName, 'courtName', 120);
+        const modality = requiredString(body.modality, 'modality', 120);
+        if (!isIsoDate(slotDate) || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+          throw new ApiError(400, 'Data ou horário local inválido.');
+        }
+
+        const currentLocal = localSlotDateTime(new Date().toISOString(), timezone);
+        if (!currentLocal) throw new ApiError(500, 'Não foi possível validar o fuso horário da arena.');
+        const availabilityDates = [slotDate];
+        if (slotDate > currentLocal.date) availabilityDates.push(shiftIsoDate(slotDate, -1));
+
+        const matchingSlots = new Map<string, JsonRecord>();
+        for (const availabilityDate of availabilityDates) {
+          const { data: availability, error: availabilityError } = await supabase.rpc('whatsapp_get_availability', {
+            p_instance_name: instanceName,
+            p_token_hash: tokenHash,
+            p_date: availabilityDate,
+          });
+          if (availabilityError) throw new ApiError(409, availabilityError.message.slice(0, 250));
+          if (!Array.isArray(availability)) continue;
+
+          for (const slot of availability) {
+            if (!isRecord(slot)) continue;
+            if (
+              normalizeSlotLabel(slot.court_name) !== normalizeSlotLabel(courtName) ||
+              normalizeSlotLabel(slot.modality) !== normalizeSlotLabel(modality)
+            ) continue;
+            const local = localSlotDateTime(slot.start_at, timezone);
+            if (local?.date !== slotDate || local.time !== time) continue;
+            if (typeof slot.court_id !== 'string' || typeof slot.start_at !== 'string') continue;
+            matchingSlots.set(`${slot.court_id}|${slot.start_at}`, slot);
+          }
+        }
+
+        const candidates = Array.from(matchingSlots.values());
+        if (candidates.length !== 1) {
+          throw new ApiError(409, 'Esse horário não está mais disponível. Consulte os horários novamente.');
+        }
+        courtId = requiredString(candidates[0].court_id, 'court_id', 36);
+        startAt = requiredString(candidates[0].start_at, 'start_at', 40);
+      } else {
+        // Backward compatibility while the n8n workflow switches to user-facing slot fields.
+        courtId = requiredString(body.courtId, 'courtId', 36);
+        startAt = requiredString(body.startAt, 'startAt', 40);
+      }
+
       if (!/^[0-9a-f-]{36}$/i.test(courtId) || Number.isNaN(Date.parse(startAt))) {
         throw new ApiError(400, 'Quadra ou horário inválido.');
       }
