@@ -1,5 +1,17 @@
 -- Allow confirmation with a plain SIM only when one unexpired offer exists for this arena and sender.
 -- The same advisory lock in both functions serializes offers and confirmations per sender.
+CREATE TABLE IF NOT EXISTS public.whatsapp_booking_confirmation_attempts (
+  instance_name TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  arena_id UUID NOT NULL REFERENCES public.arenas(id) ON DELETE CASCADE,
+  sender_phone TEXT NOT NULL,
+  reason TEXT NOT NULL CHECK (reason IN ('no_pending_offer', 'multiple_pending_offers')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (instance_name, message_id)
+);
+ALTER TABLE public.whatsapp_booking_confirmation_attempts ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.whatsapp_booking_confirmation_attempts FROM PUBLIC, anon, authenticated, service_role;
+
 CREATE OR REPLACE FUNCTION public.whatsapp_create_booking_offer(
   p_instance_name TEXT,
   p_token_hash TEXT,
@@ -108,6 +120,7 @@ DECLARE
   v_reservation public.reservations;
   v_phone TEXT := regexp_replace(COALESCE(p_sender_phone, ''), '\D', '', 'g');
   v_pending_count INTEGER;
+  v_attempt_reason TEXT;
 BEGIN
   SELECT c.arena_id INTO v_arena_id
   FROM public.arena_whatsapp_connections c
@@ -136,6 +149,14 @@ BEGIN
   END IF;
 
   IF COALESCE(trim(p_confirmation_code), '') = '' THEN
+    SELECT a.reason INTO v_attempt_reason
+    FROM public.whatsapp_booking_confirmation_attempts a
+    WHERE a.instance_name = p_instance_name AND a.message_id = p_message_id
+      AND a.arena_id = v_arena_id AND a.sender_phone = v_phone;
+    IF FOUND THEN
+      RETURN jsonb_build_object('confirmed', false, 'reason', v_attempt_reason);
+    END IF;
+
     SELECT count(*) INTO v_pending_count
     FROM public.whatsapp_booking_offers o
     WHERE o.instance_name = p_instance_name AND o.arena_id = v_arena_id
@@ -143,9 +164,25 @@ BEGIN
       AND o.expires_at > now();
 
     IF v_pending_count = 0 THEN
-      RETURN jsonb_build_object('confirmed', false, 'reason', 'no_pending_offer');
+      INSERT INTO public.whatsapp_booking_confirmation_attempts
+        (instance_name, message_id, arena_id, sender_phone, reason)
+      VALUES (p_instance_name, p_message_id, v_arena_id, v_phone, 'no_pending_offer')
+      ON CONFLICT (instance_name, message_id) DO NOTHING;
+      SELECT a.reason INTO v_attempt_reason
+      FROM public.whatsapp_booking_confirmation_attempts a
+      WHERE a.instance_name = p_instance_name AND a.message_id = p_message_id
+        AND a.arena_id = v_arena_id AND a.sender_phone = v_phone;
+      RETURN jsonb_build_object('confirmed', false, 'reason', COALESCE(v_attempt_reason, 'no_pending_offer'));
     ELSIF v_pending_count > 1 THEN
-      RETURN jsonb_build_object('confirmed', false, 'reason', 'multiple_pending_offers');
+      INSERT INTO public.whatsapp_booking_confirmation_attempts
+        (instance_name, message_id, arena_id, sender_phone, reason)
+      VALUES (p_instance_name, p_message_id, v_arena_id, v_phone, 'multiple_pending_offers')
+      ON CONFLICT (instance_name, message_id) DO NOTHING;
+      SELECT a.reason INTO v_attempt_reason
+      FROM public.whatsapp_booking_confirmation_attempts a
+      WHERE a.instance_name = p_instance_name AND a.message_id = p_message_id
+        AND a.arena_id = v_arena_id AND a.sender_phone = v_phone;
+      RETURN jsonb_build_object('confirmed', false, 'reason', COALESCE(v_attempt_reason, 'multiple_pending_offers'));
     END IF;
 
     SELECT o.* INTO v_offer
