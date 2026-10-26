@@ -458,22 +458,22 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.register_arena_whatsapp_connection(UUID, TEXT, TEXT) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.update_arena_whatsapp_connection(UUID, TEXT, TEXT, TEXT) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.remove_arena_whatsapp_connection(UUID) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.whatsapp_authorize_instance(TEXT, TEXT) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.whatsapp_set_connection_status(TEXT, TEXT, TEXT, TEXT) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.whatsapp_get_availability(TEXT, TEXT, DATE) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.whatsapp_create_booking_offer(TEXT, TEXT, TEXT, TEXT, UUID, TIMESTAMPTZ) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.whatsapp_confirm_booking(TEXT, TEXT, TEXT, TEXT, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.register_arena_whatsapp_connection(UUID, TEXT, TEXT) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.update_arena_whatsapp_connection(UUID, TEXT, TEXT, TEXT) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.remove_arena_whatsapp_connection(UUID) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.whatsapp_authorize_instance(TEXT, TEXT) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.whatsapp_set_connection_status(TEXT, TEXT, TEXT, TEXT) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.whatsapp_get_availability(TEXT, TEXT, DATE) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.whatsapp_create_booking_offer(TEXT, TEXT, TEXT, TEXT, UUID, TIMESTAMPTZ) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.whatsapp_confirm_booking(TEXT, TEXT, TEXT, TEXT, TEXT) FROM PUBLIC, anon, authenticated, service_role;
 
 GRANT EXECUTE ON FUNCTION public.register_arena_whatsapp_connection(UUID, TEXT, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.update_arena_whatsapp_connection(UUID, TEXT, TEXT, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.remove_arena_whatsapp_connection(UUID) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.whatsapp_authorize_instance(TEXT, TEXT) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.whatsapp_set_connection_status(TEXT, TEXT, TEXT, TEXT) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.whatsapp_get_availability(TEXT, TEXT, DATE) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.whatsapp_create_booking_offer(TEXT, TEXT, TEXT, TEXT, UUID, TIMESTAMPTZ) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.whatsapp_confirm_booking(TEXT, TEXT, TEXT, TEXT, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.whatsapp_authorize_instance(TEXT, TEXT) TO anon;
+GRANT EXECUTE ON FUNCTION public.whatsapp_set_connection_status(TEXT, TEXT, TEXT, TEXT) TO anon;
+GRANT EXECUTE ON FUNCTION public.whatsapp_get_availability(TEXT, TEXT, DATE) TO anon;
+GRANT EXECUTE ON FUNCTION public.whatsapp_create_booking_offer(TEXT, TEXT, TEXT, TEXT, UUID, TIMESTAMPTZ) TO anon;
+GRANT EXECUTE ON FUNCTION public.whatsapp_confirm_booking(TEXT, TEXT, TEXT, TEXT, TEXT) TO anon;
 
 
