@@ -1,4 +1,3 @@
-import { buildConfirmationButton } from './confirmation-button.js';
 import type { ApiRequest, ApiResponse, JsonRecord } from '../../src/server/whatsapp.js';
 import {
   ApiError,
@@ -221,50 +220,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const text = requiredString(body.text, 'text', 4000);
       if (phone.length < 10) throw new ApiError(400, 'Telefone de destino inválido.');
 
-      const sendText = () => evolutionRequest<unknown>(
+      const result = await evolutionRequest<unknown>(
         `/message/sendText/${encodeURIComponent(instanceName)}`,
         { method: 'POST', body: { number: phone, text } },
       );
-      const confirmationButton = buildConfirmationButton(text);
-
-      if (confirmationButton) {
-        try {
-          const result = await evolutionRequest<unknown>(
-            `/message/sendButtons/${encodeURIComponent(instanceName)}`,
-            {
-              method: 'POST',
-              body: {
-                number: phone,
-                title: confirmationButton.title,
-                description: confirmationButton.description,
-                footer: 'Oferta válida por até 15 minutos.',
-                buttons: [{
-                  type: 'reply',
-                  displayText: 'Confirmar reserva',
-                  id: `SIM ${confirmationButton.confirmationCode}`,
-                }],
-              },
-            },
-          );
-          return json(res, 200, {
-            sent: true,
-            format: 'button',
-            result: isRecord(result) ? { key: result.key ?? null } : null,
-          });
-        } catch (error) {
-          // Evolution 2.3.7 may reject interactive buttons. Keep the existing
-          // confirmation flow working by sending its original text on HTTP 400.
-          if (!(error instanceof ApiError) || error.upstreamStatusCode !== 400) throw error;
-          const result = await sendText();
-          return json(res, 200, {
-            sent: true,
-            format: 'text_fallback',
-            result: isRecord(result) ? { key: result.key ?? null } : null,
-          });
-        }
-      }
-
-      const result = await sendText();
       return json(res, 200, {
         sent: true,
         format: 'text',
