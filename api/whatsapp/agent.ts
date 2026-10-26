@@ -185,7 +185,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     if (action === 'confirm') {
       const phone = normalizePhone(requiredString(body.senderPhone, 'senderPhone', 40));
-      const code = requiredString(body.confirmationCode, 'confirmationCode', 12).toUpperCase();
+      const simpleConfirmation = body.simpleConfirmation === true
+        && typeof body.messageText === 'string'
+        && body.messageText.trim().toLocaleUpperCase('pt-BR') === 'SIM';
+      const code = simpleConfirmation
+        ? ''
+        : requiredString(body.confirmationCode, 'confirmationCode', 12).toUpperCase();
+      if (!simpleConfirmation && !/^[A-F0-9]{8}$/.test(code)) {
+        throw new ApiError(400, 'Informe SIM ou o código de confirmação da oferta.');
+      }
       const messageId = requiredString(body.messageId, 'messageId', 160);
       const { data, error } = await supabase.rpc('whatsapp_confirm_booking', {
         p_instance_name: instanceName,
