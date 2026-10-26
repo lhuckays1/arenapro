@@ -16,6 +16,7 @@ import {
   UserRound,
   ReceiptText,
   Beer,
+  MessageCircle,
   LogOut,
   Menu,
   X,
@@ -111,6 +112,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
       name: 'Bar / Comandas',
       path: '/admin/bar-comandas',
       icon: <Beer className="w-4 h-4" />,
+    },
+    {
+      name: 'WhatsApp',
+      path: '/admin/whatsapp',
+      icon: <MessageCircle className="w-4 h-4" />,
     },
     {
       name: 'Configurações',
