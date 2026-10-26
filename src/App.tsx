@@ -25,6 +25,7 @@ import { ServicesPage } from './pages/admin/ServicesPage';
 import { FinancePage } from './pages/admin/FinancePage';
 import { BarComandasPage } from './pages/admin/BarComandasPage';
 import { SettingsPage } from './pages/admin/SettingsPage';
+import { WhatsAppConnectionPage } from './pages/admin/WhatsAppConnectionPage';
 import { UsersPage } from './pages/admin/UsersPage';
 import { TeachersPage } from './pages/admin/TeachersPage';
 import { StudentsPage } from './pages/admin/StudentsPage';
@@ -638,6 +639,10 @@ const AppContent: React.FC = () => {
           />
         )}
 
+
+        {currentPath === '/admin/whatsapp' && (
+          <WhatsAppConnectionPage onNavigate={navigate} />
+        )}
 
         {currentPath === '/admin/usuarios' && (
           <UsersPage
