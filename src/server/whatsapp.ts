@@ -71,7 +71,7 @@ export async function requireArenaAdmin(
   const { data: userData, error: userError } = await supabase.auth.getUser(token);
   if (userError || !userData.user) throw new ApiError(401, 'Sessão inválida. Entre novamente.');
 
-  const { data: isAdmin, error: roleError } = await supabase.rpc('is_arena_admin', {
+  const { data: isAdmin, error: roleError } = await supabase.rpc('is_arena_whatsapp_admin', {
     lookup_arena_id: arenaId,
   });
   if (roleError) throw new ApiError(500, 'Não foi possível validar as permissões da arena.');
