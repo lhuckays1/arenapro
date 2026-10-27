@@ -103,46 +103,16 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     });
     if (registerError) throw new ApiError(500, 'Não foi possível registrar a conexão protegida da arena.');
 
-    let instanceResponse: unknown;
-    if (!connection) {
-      try {
-        instanceResponse = await evolutionRequest('/instance/create', {
-          method: 'POST',
-          body: { instanceName, qrcode: true, integration: 'WHATSAPP-BAILEYS' },
-        });
-      } catch (createError) {
-        // Recover an instance created by a previous interrupted attempt.
-        try {
-          instanceResponse = await evolutionRequest(
-            `/instance/connectionState/${encodeURIComponent(instanceName)}`,
-          );
-        } catch {
-          throw createError;
-        }
-      }
-    } else {
-      try {
-        instanceResponse = await evolutionRequest(
-          `/instance/connectionState/${encodeURIComponent(instanceName)}`,
-        );
-      } catch (stateError) {
-        if (!(stateError instanceof ApiError) || stateError.upstreamStatusCode !== 404) {
-          throw stateError;
-        }
-
-        // The database row can outlive a failed first attempt. Recreate the
-        // provider instance when its connection-state endpoint confirms a 404.
-        instanceResponse = await evolutionRequest('/instance/create', {
-          method: 'POST',
-          body: { instanceName, qrcode: true, integration: 'WHATSAPP-BAILEYS' },
-        });
-      }
-      if (getConnectionState(instanceResponse) !== 'open') {
-        instanceResponse = await evolutionRequest(
-          `/instance/connect/${encodeURIComponent(instanceName)}`,
-          { method: 'GET' },
-        );
-      }
+    // Follow the working CRM flow: check whether the provider instance exists,
+    // create it only when needed, then request a fresh QR separately below.
+    const instances = await evolutionRequest<unknown>('/instance/fetchInstances');
+    const instanceExists = Array.isArray(instances)
+      && instances.some((item) => isRecord(item) && item.name === instanceName);
+    if (!instanceExists) {
+      await evolutionRequest('/instance/create', {
+        method: 'POST',
+        body: { instanceName, qrcode: true, integration: 'WHATSAPP-BAILEYS' },
+      });
     }
 
     await evolutionRequest(`/webhook/set/${encodeURIComponent(instanceName)}`, {
@@ -159,20 +129,29 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       },
     });
 
-    let qrCode = getQrCode(instanceResponse);
-    const statusFromInstance = toConnectionStatus(getConnectionState(instanceResponse));
-    if (!qrCode && statusFromInstance !== 'CONNECTED') {
-      const qrResponse = await evolutionRequest<unknown>(
+    const stateResponse = await evolutionRequest<unknown>(
+      `/instance/connectionState/${encodeURIComponent(instanceName)}`,
+    );
+    const statusFromState = toConnectionStatus(getConnectionState(stateResponse));
+    let qrCode: string | null = null;
+    let connectionResponse = stateResponse;
+    if (statusFromState !== 'CONNECTED') {
+      // Evolution may return an initial QR from /instance/create. The CRM
+      // doesn't use it: /instance/connect provides the current pairing QR.
+      connectionResponse = await evolutionRequest<unknown>(
         `/instance/connect/${encodeURIComponent(instanceName)}`,
       );
-      qrCode = getQrCode(qrResponse);
+      qrCode = getQrCode(connectionResponse);
     }
 
-    const finalStatus = statusFromInstance === 'CONNECTED' ? 'CONNECTED' : 'CONNECTING';
-    await updateStatus(supabase, arenaId, finalStatus, getPhoneNumber(instanceResponse));
+    const finalStatus = statusFromState === 'CONNECTED'
+      || toConnectionStatus(getConnectionState(connectionResponse)) === 'CONNECTED'
+      ? 'CONNECTED'
+      : 'CONNECTING';
+    await updateStatus(supabase, arenaId, finalStatus, getPhoneNumber(connectionResponse));
     return json(res, 200, {
       status: finalStatus,
-      phoneNumber: getPhoneNumber(instanceResponse),
+      phoneNumber: getPhoneNumber(connectionResponse),
       qrCode,
       qrExpiresInSeconds: qrCode ? 45 : null,
     });
