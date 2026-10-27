@@ -7,7 +7,6 @@ import {
   Clock, 
   Phone, 
   MapPin, 
-  Database, 
   Save, 
   CheckCircle2, 
   AlertCircle, 
@@ -804,20 +803,6 @@ export const SettingsPage: React.FC<{ onNavigate: (path: string) => void }> = ()
               </div>
             </div>
           </div>
-        </div>
-
-        {/* Security & Multi-tenant Notice */}
-        <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2.5 text-slate-300">
-            <Database className="w-4 h-4 text-emerald-400 shrink-0" />
-            <div>
-              <span className="font-semibold block">Isolamento Multi-Tenant: Tenant ID</span>
-              <span className="font-mono text-[11px] text-slate-400">{activeArena?.id}</span>
-            </div>
-          </div>
-          <span className="px-2 py-1 rounded bg-emerald-500/20 text-emerald-400 font-bold text-[10px] uppercase">
-            PostgreSQL RLS Ativo
-          </span>
         </div>
 
         {/* Action Button */}
