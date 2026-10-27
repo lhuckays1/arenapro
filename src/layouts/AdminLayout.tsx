@@ -211,9 +211,6 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
                     </span>
                   </span>
 
-                  <span className="text-[10px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    SaaS
-                  </span>
 
                 </div>
 
