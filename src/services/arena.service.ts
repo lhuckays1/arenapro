@@ -31,6 +31,80 @@ import { enrollmentEndDate } from '../utils/enrollment';
 import { paymentRequestKey, completePaymentRequest } from '../utils/paymentRequest';
 import { sandboxTransaction } from '../utils/sandboxTransaction';
 
+const localReservationClock = (value: string, timezone: string): { date: string; minutes: number } => {
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) throw new Error('Informe um período válido para a reserva.');
+
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(timestamp);
+  const get = (type: string) => parts.find(part => part.type === type)?.value || '';
+
+  return {
+    date: `${get('year')}-${get('month')}-${get('day')}`,
+    minutes: Number(get('hour')) * 60 + Number(get('minute')),
+  };
+};
+
+const operatingMinutes = (value: string): number => {
+  const match = String(value || '').match(/^(\d{1,2}):(\d{2})/);
+  return match ? Number(match[1]) * 60 + Number(match[2]) : Number.NaN;
+};
+
+const assertReservationWithinOperatingHours = (
+  arena: Arena,
+  startAt: string,
+  endAt: string
+): void => {
+  if (new Date(endAt).getTime() <= new Date(startAt).getTime()) {
+    throw new Error('O horário de término deve ser posterior ao início.');
+  }
+
+  const openingTime = String(arena.opening_time || '06:00').slice(0, 5);
+  const closingTime = String(arena.closing_time || '23:00').slice(0, 5);
+  const opening = operatingMinutes(openingTime);
+  const closing = operatingMinutes(closingTime);
+
+  if (!Number.isFinite(opening) || !Number.isFinite(closing)) {
+    throw new Error('Os horários de funcionamento da arena estão inválidos. Revise as configurações.');
+  }
+
+  const timezone = arena.timezone || 'America/Sao_Paulo';
+  const start = localReservationClock(startAt, timezone);
+  const end = localReservationClock(endAt, timezone);
+  const nextDay = new Date(`${start.date}T12:00:00Z`);
+  nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+  const endsNextDay = nextDay.toISOString().slice(0, 10) === end.date;
+  const sameDay = start.date === end.date;
+
+  let insideHours = opening === closing;
+
+  if (closing > opening) {
+    insideHours = sameDay && start.minutes >= opening &&
+      end.minutes > start.minutes && end.minutes <= closing;
+  } else if (closing < opening) {
+    if (start.minutes >= opening) {
+      insideHours =
+        (sameDay && end.minutes > start.minutes) ||
+        (endsNextDay && end.minutes <= closing);
+    } else {
+      insideHours =
+        start.minutes < closing && sameDay &&
+        end.minutes > start.minutes && end.minutes <= closing;
+    }
+  }
+
+  if (!insideHours) {
+    throw new Error(`Este horário está fora do funcionamento da arena (${openingTime} às ${closingTime}).`);
+  }
+};
+
 export const arenaService = {
   // 1. ARENAS
   async getArenas(): Promise<Arena[]> {
@@ -825,6 +899,10 @@ export const arenaService = {
   async createReservation(
     reservation: Omit<Reservation, 'id' | 'created_at' | 'updated_at' | 'court' | 'customer'>
   ): Promise<Reservation> {
+    const arena = await this.getArenaById(reservation.arena_id);
+    if (!arena) throw new Error('Arena não encontrada para validar o horário da reserva.');
+    assertReservationWithinOperatingHours(arena, reservation.start_at, reservation.end_at);
+
     // Check conflicts against reservations & court blocks
     const [allReservations, allBlocks] = await Promise.all([
       this.getReservations(reservation.arena_id),
@@ -893,6 +971,12 @@ export const arenaService = {
       const targetCourtId = updates.court_id || current.court_id;
       const targetStart = updates.start_at || current.start_at;
       const targetEnd = updates.end_at || current.end_at;
+
+      if (updates.start_at || updates.end_at || updates.status === 'CONFIRMED' || updates.status === 'PENDING') {
+        const arena = await this.getArenaById(arenaId || current.arena_id);
+        if (!arena) throw new Error('Arena não encontrada para validar o horário da reserva.');
+        assertReservationWithinOperatingHours(arena, targetStart, targetEnd);
+      }
 
       const hasConflict = this.checkReservationOverlap(
         allReservations,
