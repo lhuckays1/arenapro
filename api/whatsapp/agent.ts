@@ -22,6 +22,10 @@ function normalizeOutboundMessageHash(value: string): string {
   return sha256(value.normalize('NFKC').trim().replace(/\s+/g, ' '));
 }
 
+function conversationKey(instanceName: string, tokenHash: string, phone: string): string {
+  return sha256(`${instanceName}:${tokenHash}:${phone}`);
+}
+
 async function requireInstance(
   instanceName: string,
   tokenHash: string,
@@ -178,7 +182,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const { data, error } = await supabase.rpc('whatsapp_create_booking_offer', {
         p_instance_name: instanceName,
         p_token_hash: tokenHash,
-        p_sender_phone: phone,
+        p_conversation_key: conversationKey(instanceName, tokenHash, phone),
         p_customer_name: customerName,
         p_court_id: courtId,
         p_start_at: startAt,
@@ -202,7 +206,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const { data, error } = await supabase.rpc('whatsapp_confirm_booking', {
         p_instance_name: instanceName,
         p_token_hash: tokenHash,
-        p_sender_phone: phone,
+        p_conversation_key: conversationKey(instanceName, tokenHash, phone),
         p_confirmation_code: code,
         p_message_id: messageId,
       });
@@ -233,7 +237,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const { data, error } = await supabase.rpc('whatsapp_get_handoff_status', {
         p_instance_name: instanceName,
         p_token_hash: tokenHash,
-        p_sender_phone: phone,
+        p_conversation_key: conversationKey(instanceName, tokenHash, phone),
       });
       if (error) throw new ApiError(503, 'Não foi possível verificar se o atendimento humano está ativo.');
       return json(res, 200, isRecord(data) ? data : { paused: false });
@@ -248,7 +252,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const { data, error } = await supabase.rpc('whatsapp_classify_outbound_event', {
         p_instance_name: instanceName,
         p_token_hash: tokenHash,
-        p_sender_phone: phone,
+        p_conversation_key: conversationKey(instanceName, tokenHash, phone),
         p_message_id: messageId || null,
         p_content_hash: contentHash,
       });
@@ -265,7 +269,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const { data: markerId, error: markerError } = await supabase.rpc('whatsapp_begin_bot_outbound', {
         p_instance_name: instanceName,
         p_token_hash: tokenHash,
-        p_sender_phone: phone,
+        p_conversation_key: conversationKey(instanceName, tokenHash, phone),
         p_content_hash: normalizeOutboundMessageHash(text),
       });
       if (markerError || typeof markerId !== 'string') {
