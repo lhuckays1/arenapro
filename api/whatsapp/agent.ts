@@ -182,7 +182,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const { data, error } = await supabase.rpc('whatsapp_create_booking_offer', {
         p_instance_name: instanceName,
         p_token_hash: tokenHash,
-        p_conversation_key: conversationKey(instanceName, tokenHash, phone),
+        p_sender_phone: phone,
         p_customer_name: customerName,
         p_court_id: courtId,
         p_start_at: startAt,
@@ -206,7 +206,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const { data, error } = await supabase.rpc('whatsapp_confirm_booking', {
         p_instance_name: instanceName,
         p_token_hash: tokenHash,
-        p_conversation_key: conversationKey(instanceName, tokenHash, phone),
+        p_sender_phone: phone,
         p_confirmation_code: code,
         p_message_id: messageId,
       });
