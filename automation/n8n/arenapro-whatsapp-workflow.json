@@ -29,7 +29,7 @@
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const outer = $json || {};\nconst payload = outer.body && typeof outer.body === 'object' ? outer.body : outer;\nconst data = payload.data && typeof payload.data === 'object' ? payload.data : payload;\nconst rawEvent = String(payload.event || payload.type || '').toUpperCase().replace(/[.\\- ]/g, '_');\nconst event = rawEvent.includes('CONNECTION_UPDATE') ? 'CONNECTION_UPDATE'\n  : rawEvent.includes('MESSAGES_UPSERT') ? 'MESSAGES_UPSERT' : rawEvent;\nconst key = data.key || data.message?.key || {};\nconst remoteJid = String(key.remoteJid || data.sender || data.from || '');\nconst senderPhone = remoteJid.replace(/@.*$/, '').replace(/\\D/g, '');\nconst message = data.message || {};\nconst messageText = String(\n  message.conversation ||\n  message.extendedTextMessage?.text ||\n  message.imageMessage?.caption ||\n  message.videoMessage?.caption ||\n  message.documentMessage?.caption ||\n  message.buttonsResponseMessage?.selectedButtonId ||\n  message.listResponseMessage?.singleSelectReply?.selectedRowId ||\n  data.text || ''\n).trim();\nconst match = messageText.match(/^\\s*SIM\\s+([A-F0-9]{8})\\s*$/i);\nconst simpleConfirmation = /^SIM$/i.test(messageText);\nconst headers = outer.headers || {};\nconst token = headers['x-arenapro-webhook'] || headers['X-ArenaPro-Webhook'] || '';\nconst instanceName = String(payload.instance || payload.instanceName || data.instance || '');\nconst state = String(data.state || data.instance?.state || payload.state || payload.status || '').toUpperCase();\nconst isConnection = event === 'CONNECTION_UPDATE';\nconst isMessage = event === 'MESSAGES_UPSERT';\nconst ignored = (!isConnection && !isMessage)\n  || (isMessage && (key.fromMe === true || remoteJid.includes('@g.us') || remoteJid.includes('status@') || !senderPhone || !messageText));\nreturn { json: {\n  ignore: Boolean(ignored),\n  event,\n  instanceName,\n  senderPhone,\n  messageId: String(key.id || data.id || ''),\n  messageText,\n  confirmationCode: match ? match[1].toUpperCase() : '',\n  simpleConfirmation,\n  connectionStatus: state,\n  phoneNumber: String(data.ownerJid || data.number || payload.number || '').replace(/@s\\.whatsapp\\.net$/, ''),\n  webhookToken: String(token)\n} };"
+        "jsCode": "const outer = $json || {};\nconst payload = outer.body && typeof outer.body === 'object' ? outer.body : outer;\nconst data = payload.data && typeof payload.data === 'object' ? payload.data : payload;\nconst rawEvent = String(payload.event || payload.type || '').toUpperCase().replace(/[.\\- ]/g, '_');\nconst event = rawEvent.includes('CONNECTION_UPDATE') ? 'CONNECTION_UPDATE'\n  : rawEvent.includes('MESSAGES_UPSERT') ? 'MESSAGES_UPSERT' : rawEvent;\nconst key = data.key || data.message?.key || {};\nconst remoteJid = String(key.remoteJid || data.sender || data.from || '');\nconst senderPhone = remoteJid.replace(/@.*$/, '').replace(/\\D/g, '');\nconst message = data.message || {};\nconst messageText = String(\n  message.conversation ||\n  message.extendedTextMessage?.text ||\n  message.imageMessage?.caption ||\n  message.videoMessage?.caption ||\n  message.documentMessage?.caption ||\n  message.buttonsResponseMessage?.selectedButtonId ||\n  message.listResponseMessage?.singleSelectReply?.selectedRowId ||\n  data.text || ''\n).trim();\nconst match = messageText.match(/^\\s*SIM\\s+([A-F0-9]{8})\\s*$/i);\nconst simpleConfirmation = /^SIM$/i.test(messageText);\nconst headers = outer.headers || {};\nconst token = headers['x-arenapro-webhook'] || headers['X-ArenaPro-Webhook'] || '';\nconst instanceName = String(payload.instance || payload.instanceName || data.instance || '');\nconst state = String(data.state || data.instance?.state || payload.state || payload.status || '').toUpperCase();\nconst isConnection = event === 'CONNECTION_UPDATE';\nconst isMessage = event === 'MESSAGES_UPSERT';\nconst fromMe = key.fromMe === true || String(key.fromMe || '').toLowerCase() === 'true';\nconst ignored = (!isConnection && !isMessage)\n  || (isMessage && (remoteJid.includes('@g.us') || remoteJid.includes('status@') || !senderPhone || (!fromMe && !messageText)));\nreturn { json: {\n  ignore: Boolean(ignored),\n  event,\n  instanceName,\n  senderPhone,\n  messageId: String(key.id || data.id || ''),\n  fromMe,\n  messageText,\n  confirmationCode: match ? match[1].toUpperCase() : '',\n  simpleConfirmation,\n  connectionStatus: state,\n  phoneNumber: String(data.ownerJid || data.number || payload.number || '').replace(/@s\\.whatsapp\\.net$/, ''),\n  webhookToken: String(token)\n} };"
       }
     },
     {
@@ -473,6 +473,156 @@
         900,
         500
       ]
+    },
+    {
+      "id": "16161616-1616-4616-8616-161616161616",
+      "name": "Is human outgoing message",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        150,
+        400
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "16161616-1616-4616-8616-161616161616-cond",
+              "leftValue": "={{ $('Normalize Evolution Event').item.json.fromMe }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "17171717-1717-4717-8717-171717171717",
+      "name": "Classify outbound message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://arenapro.athomoinfotech.com.br/api/whatsapp/agent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-ArenaPro-Webhook",
+              "value": "={{ $('Normalize Evolution Event').item.json.webhookToken }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "options": {},
+        "jsonBody": "={{ { action: 'classify_outbound', instanceName: $('Normalize Evolution Event').item.json.instanceName, senderPhone: $('Normalize Evolution Event').item.json.senderPhone, messageId: $('Normalize Evolution Event').item.json.messageId, messageText: $('Normalize Evolution Event').item.json.messageText } }}"
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "18181818-1818-4818-8818-181818181818",
+      "name": "Human message classified",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        640,
+        300
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "19191919-1919-4919-8919-191919191919",
+      "name": "Check human handoff",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        500
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://arenapro.athomoinfotech.com.br/api/whatsapp/agent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-ArenaPro-Webhook",
+              "value": "={{ $('Normalize Evolution Event').item.json.webhookToken }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "options": {},
+        "jsonBody": "={{ { action: 'handoff_status', instanceName: $('Normalize Evolution Event').item.json.instanceName, senderPhone: $('Normalize Evolution Event').item.json.senderPhone } }}"
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "20202020-2020-4020-8020-202020202020",
+      "name": "Is conversation paused",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        640,
+        500
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "20202020-2020-4020-8020-202020202020-cond",
+              "leftValue": "={{ $json.paused }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "21212121-2121-4121-8121-212121212121",
+      "name": "AI paused for human",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        880,
+        400
+      ],
+      "parameters": {}
     }
   ],
   "connections": {
@@ -538,7 +688,7 @@
         ],
         [
           {
-            "node": "Is confirmation code",
+            "node": "Is human outgoing message",
             "type": "main",
             "index": 0
           }
@@ -639,6 +789,70 @@
           }
         ]
       ]
+    },
+    "Is human outgoing message": {
+      "main": [
+        [
+          {
+            "node": "Classify outbound message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check human handoff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify outbound message": {
+      "main": [
+        [
+          {
+            "node": "Human message classified",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Human message classified": {
+      "main": []
+    },
+    "Check human handoff": {
+      "main": [
+        [
+          {
+            "node": "Is conversation paused",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is conversation paused": {
+      "main": [
+        [
+          {
+            "node": "AI paused for human",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is confirmation code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI paused for human": {
+      "main": []
     }
   },
   "settings": {
