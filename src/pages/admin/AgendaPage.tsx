@@ -1880,6 +1880,14 @@ export const AgendaPage: React.FC<{
           customers={
             customers
           }
+          openingTime={
+            activeArena.opening_time ||
+            '06:00'
+          }
+          closingTime={
+            activeArena.closing_time ||
+            '23:00'
+          }
           initialData={
             selectedReservation
           }

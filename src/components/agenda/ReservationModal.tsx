@@ -48,6 +48,8 @@ interface ReservationModalProps {
   arenaId: string;
   courts: Court[];
   customers: Customer[];
+  openingTime: string;
+  closingTime: string;
   initialData?: Partial<Reservation> | null;
   mode?: 'create' | 'edit' | 'view';
 }
@@ -117,6 +119,8 @@ export const ReservationModal: React.FC<
   arenaId,
   courts,
   customers: initialCustomers,
+  openingTime,
+  closingTime,
   initialData,
   mode: initialMode = 'create',
 }) => {
@@ -1738,6 +1742,8 @@ export const ReservationModal: React.FC<
                 id="res-start-time"
                 type="time"
                 step="1800"
+                min={mode === 'create' ? openingTime.slice(0, 5) : undefined}
+                max={mode === 'create' && Number(closingTime.slice(0, 2)) > Number(openingTime.slice(0, 2)) ? closingTime.slice(0, 5) : undefined}
                 disabled={
                   mode ===
                   'view'
@@ -1755,6 +1761,13 @@ export const ReservationModal: React.FC<
                 }
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 disabled:opacity-60"
               />
+
+
+              {mode === 'create' && (
+                <p className="text-[10px] text-slate-500">
+                  Reservas começam a partir das {openingTime.slice(0, 5)}{Number(closingTime.slice(0, 2)) > Number(openingTime.slice(0, 2)) ? ' e até ' + closingTime.slice(0, 5) : ''}.
+                </p>
+              )}
 
             </div>
 
