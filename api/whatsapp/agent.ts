@@ -18,6 +18,10 @@ function requiredString(value: unknown, name: string, maxLength = 200): string {
   return value.trim();
 }
 
+function normalizeOutboundMessageHash(value: string): string {
+  return sha256(value.normalize('NFKC').trim().replace(/\s+/g, ' '));
+}
+
 async function requireInstance(
   instanceName: string,
   tokenHash: string,
@@ -223,18 +227,78 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return json(res, 200, { status });
     }
 
+    if (action === 'handoff_status') {
+      const phone = normalizePhone(requiredString(body.senderPhone, 'senderPhone', 40));
+      if (phone.length < 6 || phone.length > 24) throw new ApiError(400, 'Telefone de conversa inválido.');
+      const { data, error } = await supabase.rpc('whatsapp_get_handoff_status', {
+        p_instance_name: instanceName,
+        p_token_hash: tokenHash,
+        p_sender_phone: phone,
+      });
+      if (error) throw new ApiError(503, 'Não foi possível verificar se o atendimento humano está ativo.');
+      return json(res, 200, isRecord(data) ? data : { paused: false });
+    }
+
+    if (action === 'classify_outbound') {
+      const phone = normalizePhone(requiredString(body.senderPhone, 'senderPhone', 40));
+      if (phone.length < 6 || phone.length > 24) throw new ApiError(400, 'Telefone de conversa inválido.');
+      const messageId = typeof body.messageId === 'string' ? body.messageId.trim().slice(0, 160) : '';
+      const messageText = typeof body.messageText === 'string' ? body.messageText.slice(0, 4000) : '';
+      const contentHash = messageText.trim() ? normalizeOutboundMessageHash(messageText) : null;
+      const { data, error } = await supabase.rpc('whatsapp_classify_outbound_event', {
+        p_instance_name: instanceName,
+        p_token_hash: tokenHash,
+        p_sender_phone: phone,
+        p_message_id: messageId || null,
+        p_content_hash: contentHash,
+      });
+      if (error) throw new ApiError(503, 'Não foi possível registrar a transferência para atendimento humano.');
+      return json(res, 200, isRecord(data) ? data : { isBotMessage: false, paused: true });
+    }
+
     if (action === 'send') {
       const phone = normalizePhone(requiredString(body.phone, 'phone', 40));
       const text = requiredString(body.text, 'text', 4000);
       if (phone.length < 10) throw new ApiError(400, 'Telefone de destino inválido.');
 
-      const result = await evolutionRequest<unknown>(
-        `/message/sendText/${encodeURIComponent(instanceName)}`,
-        { method: 'POST', body: { number: phone, text } },
-      );
+      // Mark the expected bot echo before calling Evolution to close the webhook race.
+      const { data: markerId, error: markerError } = await supabase.rpc('whatsapp_begin_bot_outbound', {
+        p_instance_name: instanceName,
+        p_token_hash: tokenHash,
+        p_sender_phone: phone,
+        p_content_hash: normalizeOutboundMessageHash(text),
+      });
+      if (markerError || typeof markerId !== 'string') {
+        throw new ApiError(503, 'Não foi possível registrar a resposta automática antes do envio.');
+      }
+
+      let result: unknown;
+      try {
+        result = await evolutionRequest<unknown>(
+          `/message/sendText/${encodeURIComponent(instanceName)}`,
+          { method: 'POST', body: { number: phone, text } },
+        );
+      } catch (error) {
+        await supabase.rpc('whatsapp_cancel_bot_outbound', {
+          p_instance_name: instanceName,
+          p_token_hash: tokenHash,
+          p_outbound_id: markerId,
+        });
+        throw error;
+      }
+
+      const resultKey = isRecord(result) && isRecord(result.key) ? result.key : null;
+      const messageId = typeof resultKey?.id === 'string' ? resultKey.id : null;
+      const { error: trackingError } = await supabase.rpc('whatsapp_complete_bot_outbound', {
+        p_instance_name: instanceName,
+        p_token_hash: tokenHash,
+        p_outbound_id: markerId,
+        p_message_id: messageId,
+      });
       return json(res, 200, {
         sent: true,
         format: 'text',
+        echoTracked: !trackingError,
         result: isRecord(result) ? { key: result.key ?? null } : null,
       });
     }
