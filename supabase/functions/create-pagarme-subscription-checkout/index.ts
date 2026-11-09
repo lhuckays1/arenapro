@@ -68,14 +68,18 @@ Deno.serve(async (req) => {
 
   const { data: subscription, error: subscriptionError } = await admin
     .from("arena_subscriptions")
-    .select("id, arena_id, plan_id, status, monthly_price, checkout_url, external_plan_id, grace_period_days, plan:subscription_plans(id, name)")
+    .select("id, arena_id, plan_id, status, monthly_price, current_period_end, checkout_url, external_plan_id, grace_period_days, plan:subscription_plans(id, name)")
     .eq("arena_id", arenaId)
     .maybeSingle();
   if (subscriptionError) return json({ error: "Não foi possível consultar a assinatura." }, 500);
   if (!subscription) return json({ error: "A arena ainda não possui um plano associado." }, 404);
   if (subscription.status === "CANCELLED") return json({ error: "A assinatura foi cancelada. Fale com o suporte para reativá-la." }, 409);
   if (subscription.status === "SUSPENDED") return json({ error: "A assinatura foi suspensa pelo suporte. Entre em contato com o Super Admin para regularizar." }, 409);
-  if (subscription.status === "ACTIVE") return json({ error: "A assinatura já está ativa." }, 409);
+  const today = new Date().toISOString().slice(0, 10);
+  const activePeriodIsCurrent = !subscription.current_period_end || subscription.current_period_end >= today;
+  if (subscription.status === "ACTIVE" && activePeriodIsCurrent) {
+    return json({ error: "A assinatura já está ativa." }, 409);
+  }
 
   const amountCents = Math.round(Number(subscription.monthly_price) * 100);
   if (!Number.isSafeInteger(amountCents) || amountCents <= 0) return json({ error: "O preço do plano precisa ser configurado antes da cobrança." }, 409);
