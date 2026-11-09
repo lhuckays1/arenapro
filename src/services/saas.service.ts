@@ -23,13 +23,11 @@ export interface CreateArenaOwnerPayload {
 }
 
 export const saasService = {
-  async getPlans(): Promise<SubscriptionPlan[]> {
+  async getPlans(includeInactive = false): Promise<SubscriptionPlan[]> {
     if (!isSupabaseConfigured) return [];
-    const { data, error } = await supabase
-      .from('subscription_plans')
-      .select('*')
-      .eq('status', 'ACTIVE')
-      .order('monthly_price');
+    let query = supabase.from('subscription_plans').select('*');
+    if (!includeInactive) query = query.eq('status', 'ACTIVE');
+    const { data, error } = await query.order('monthly_price');
     if (error) throw error;
     return (data || []) as SubscriptionPlan[];
   },
@@ -40,6 +38,28 @@ export const saasService = {
     const { error } = await supabase
       .from('subscription_plans')
       .update({ monthly_price: Math.round(monthlyPrice * 100) / 100, updated_at: new Date().toISOString() })
+      .eq('id', planId);
+    if (error) throw error;
+  },
+
+  async updateSubscriptionPlan(planId: string, updates: Pick<SubscriptionPlan, 'name' | 'code' | 'monthly_price' | 'max_courts' | 'max_staff_users' | 'features' | 'status'>): Promise<void> {
+    if (!isSupabaseConfigured) throw new Error('Supabase não configurado.');
+    if (!updates.name.trim() || !updates.code.trim()) throw new Error('Nome e código do plano são obrigatórios.');
+    if (!Number.isFinite(updates.monthly_price) || updates.monthly_price <= 0) throw new Error('Informe um valor mensal maior que zero.');
+    for (const [label, value] of [['quadras', updates.max_courts], ['usuários da equipe', updates.max_staff_users]] as const) {
+      if (value !== null && value !== undefined && (!Number.isInteger(value) || value < 0)) {
+        throw new Error(`O limite de ${label} deve ser um número inteiro igual ou maior que zero.`);
+      }
+    }
+    const { error } = await supabase
+      .from('subscription_plans')
+      .update({
+        ...updates,
+        name: updates.name.trim(),
+        code: updates.code.trim().toUpperCase(),
+        monthly_price: Math.round(updates.monthly_price * 100) / 100,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', planId);
     if (error) throw error;
   },
