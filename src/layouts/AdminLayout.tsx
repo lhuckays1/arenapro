@@ -119,6 +119,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
       path: '/admin/configuracoes',
       icon: <Settings className="w-4 h-4" />,
     },
+    ...(profile?.role === 'ARENA_ADMIN' ? [{
+      name: 'Meu plano',
+      path: '/admin/assinatura',
+      icon: <CreditCard className="w-4 h-4" />,
+    }] : []),
     ...(profile?.role === 'SUPER_ADMIN' || profile?.role === 'ARENA_ADMIN' ? [{
       name: 'WhatsApp',
       path: '/admin/whatsapp',
