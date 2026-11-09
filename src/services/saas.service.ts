@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { Arena, ArenaSubscription, SubscriptionPlan } from '../types';
+import { Arena, ArenaSubscription, ArenaSubscriptionPayment, SubscriptionPlan } from '../types';
 
 export interface CreateArenaOwnerPayload {
   arena: {
@@ -32,6 +32,16 @@ export const saasService = {
       .order('monthly_price');
     if (error) throw error;
     return (data || []) as SubscriptionPlan[];
+  },
+
+  async updatePlanMonthlyPrice(planId: string, monthlyPrice: number): Promise<void> {
+    if (!isSupabaseConfigured) throw new Error('Supabase não configurado.');
+    if (!Number.isFinite(monthlyPrice) || monthlyPrice <= 0) throw new Error('Informe um valor mensal maior que zero.');
+    const { error } = await supabase
+      .from('subscription_plans')
+      .update({ monthly_price: Math.round(monthlyPrice * 100) / 100, updated_at: new Date().toISOString() })
+      .eq('id', planId);
+    if (error) throw error;
   },
 
   async getSubscriptions(): Promise<ArenaSubscription[]> {
@@ -110,6 +120,59 @@ export const saasService = {
     } as ArenaSubscription;
   },
 
+  async createPagarmeCheckout(arenaId: string): Promise<{ checkout_url: string; reused: boolean }> {
+    if (!isSupabaseConfigured) throw new Error('Supabase não configurado.');
+    const { data, error } = await supabase.functions.invoke('create-pagarme-subscription-checkout', {
+      body: { arena_id: arenaId },
+    });
+    if (error) throw new Error(error.message || 'Não foi possível preparar o checkout.');
+    if (!data?.success || typeof data.checkout_url !== 'string') {
+      throw new Error(data?.error || 'Não foi possível preparar o checkout.');
+    }
+    return { checkout_url: data.checkout_url, reused: Boolean(data.reused) };
+  },
+
+  async recordManualSubscriptionRenewal(input: {
+    subscriptionId: string;
+    paymentMethod: 'PIX' | 'CASH' | 'BANK_TRANSFER' | 'CREDIT_CARD' | 'DEBIT_CARD' | 'OTHER';
+    reference?: string;
+    notes: string;
+  }): Promise<{ current_period_end: string; amount_cents: number }> {
+    if (!isSupabaseConfigured) throw new Error('Supabase não configurado.');
+    const { data, error } = await supabase.functions.invoke('record-manual-subscription-renewal', {
+      body: {
+        subscription_id: input.subscriptionId,
+        payment_method: input.paymentMethod,
+        reference: input.reference || null,
+        notes: input.notes,
+        confirmed_payment_received: true,
+      },
+    });
+    if (error) {
+      const response = (error as any).context;
+      const responseBody = response instanceof Response
+        ? await response.clone().json().catch(() => null)
+        : null;
+      throw new Error(responseBody?.error || error.message || 'Não foi possível registrar a renovação manual.');
+    }
+    if (!data?.success || !data?.renewal?.current_period_end) {
+      throw new Error(data?.error || 'Não foi possível registrar a renovação manual.');
+    }
+    return data.renewal;
+  },
+
+  async getSubscriptionPayments(subscriptionId: string): Promise<ArenaSubscriptionPayment[]> {
+    if (!isSupabaseConfigured) return [];
+    const { data, error } = await supabase
+      .from('arena_subscription_payments')
+      .select('*')
+      .eq('subscription_id', subscriptionId)
+      .order('created_at', { ascending: false })
+      .limit(12);
+    if (error) throw error;
+    return (data || []) as ArenaSubscriptionPayment[];
+  },
+
   async createArenaOwner(payload: CreateArenaOwnerPayload) {
     if (!isSupabaseConfigured) {
       throw new Error('O onboarding de proprietários exige Supabase configurado.');
@@ -154,7 +217,6 @@ export const saasService = {
       end.setMonth(end.getMonth() + 1);
       updates.current_period_start = start.toISOString().slice(0, 10);
       updates.current_period_end = end.toISOString().slice(0, 10);
-      updates.paid_at = new Date().toISOString();
     } else if (periodEnd !== undefined) {
       updates.current_period_end = periodEnd;
     }
@@ -182,3 +244,5 @@ export const saasService = {
     return { arena: arena.data as Arena | null, subscription };
   },
 };
+
+
