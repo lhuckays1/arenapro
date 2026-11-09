@@ -3,7 +3,7 @@ import { Arena, ArenaSubscription, Profile, UserRole } from '../types';
 import { authService, type AuthSession } from '../services/auth.service';
 import { arenaService } from '../services/arena.service';
 import { saasService } from '../services/saas.service';
-import { isSupabaseConfigured, supabase } from '../lib/supabase';
+import { isSupabaseConfigured } from '../lib/supabase';
 
 interface AuthContextType {
   user: { id: string; email: string } | null;
@@ -12,8 +12,6 @@ interface AuthContextType {
   arenas: Arena[];
   activeSubscription: ArenaSubscription | null;
   subscriptionLoading: boolean;
-  operationalAccess: boolean;
-  operationalAccessLoading: boolean;
   loading: boolean;
   isConfigured: boolean;
   setActiveArena: (arena: Arena) => void;
@@ -50,28 +48,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     useState<boolean>(false);
 
   const [loading, setLoading] = useState<boolean>(true);
-  const [operationResult, setOperationResult] = useState<{ key:string; allowed:boolean } | null>(null);
-  const operationKey = `${user?.id || ''}:${activeArena?.id || ''}:${profile?.role || ''}`;
-  const operationalAccess = operationResult?.key === operationKey && operationResult.allowed;
-  const operationalAccessLoading = operationResult?.key !== operationKey;
-  useEffect(() => {
-    let cancelled = false;
-    const verify = async () => {
-      let allowed = false;
-      if (user && activeArena && profile?.role === 'SUPER_ADMIN') allowed = true;
-      else if (user && activeArena && ['ARENA_ADMIN','ARENA_STAFF'].includes(profile?.role || '')) {
-        if (isSupabaseConfigured) {
-          const { data, error } = await supabase.rpc('has_arena_operational_access', { lookup_arena_id:activeArena.id });
-          allowed = !error && data === true;
-        } else allowed = true;
-      }
-      if (!cancelled) setOperationResult({ key:operationKey, allowed });
-    };
-    void verify().catch(() => {
-      if (!cancelled) setOperationResult({ key:operationKey, allowed:false });
-    });
-    return () => { cancelled = true; };
-  }, [operationKey]);
 
   // ==========================================================
   // CARREGAR ARENAS PERMITIDAS PARA O USUÃRIO
@@ -554,8 +530,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         arenas,
         activeSubscription,
         subscriptionLoading,
-        operationalAccess,
-        operationalAccessLoading,
         loading,
         isConfigured:
           isSupabaseConfigured,
@@ -585,3 +559,5 @@ export const useAuth = (): AuthContextType => {
 
   return context;
 };
+
+
