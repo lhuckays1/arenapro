@@ -55,8 +55,6 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [savingPlanId, setSavingPlanId] = useState<string | null>(null);
-  const [planPriceDrafts, setPlanPriceDrafts] = useState<Record<string, string>>({});
   const [feedback, setFeedback] = useState<Feedback>(null);
 
   const load = async () => {
@@ -71,7 +69,6 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
       setArenas(arenaData);
       setSubscriptions(subscriptionData);
       setPlans(planData);
-      setPlanPriceDrafts(Object.fromEntries(planData.map(plan => [plan.id, Number(plan.monthly_price).toFixed(2)])));
       setOwners(ownerData);
       if (!form.planId && planData[0]) {
         setForm(prev => ({ ...prev, planId: planData[0].id }));
@@ -212,25 +209,6 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
     }
   };
 
-  const handlePlanPriceSave = async (plan: SubscriptionPlan) => {
-    const price = Number(String(planPriceDrafts[plan.id] || '').replace(',', '.'));
-    if (!Number.isFinite(price) || price <= 0) {
-      setFeedback({ type: 'error', message: 'Informe um preço mensal maior que zero.' });
-      return;
-    }
-    setSavingPlanId(plan.id);
-    setFeedback(null);
-    try {
-      await saasService.updatePlanMonthlyPrice(plan.id, price);
-      setFeedback({ type: 'success', message: `Preço do plano ${plan.name} atualizado para novas assinaturas.` });
-      await load();
-    } catch (error: any) {
-      setFeedback({ type: 'error', message: error?.message || 'Não foi possível atualizar o preço.' });
-    } finally {
-      setSavingPlanId(null);
-    }
-  };
-
   const statusMeta = (status?: string) => {
     switch (status) {
       case 'ACTIVE': return { label: 'ATIVA', icon: <CheckCircle2 className="w-3.5 h-3.5" />, cls: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30' };
@@ -265,12 +243,17 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
               Somente o SUPER_ADMIN cria proprietários. Toda nova arena começa com assinatura PENDENTE e só libera a operação após pagamento.
             </p>
           </div>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black"
-          >
-            <Plus className="w-4 h-4" /> NOVA ARENA + PROPRIETÁRIO
-          </button>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button onClick={() => onNavigate('/admin/saas/planos')} className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-xs font-black">
+              <CreditCard className="w-4 h-4" /> EDITAR PLANOS
+            </button>
+            <button
+              onClick={() => setShowCreate(true)}
+              className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black"
+            >
+              <Plus className="w-4 h-4" /> NOVA ARENA + PROPRIETÁRIO
+            </button>
+          </div>
         </div>
       </div>
 
@@ -288,40 +271,6 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
           </div>
         ))}
       </div>
-
-      <section className="bg-slate-900 border border-slate-800 rounded-3xl p-5">
-        <div className="mb-4">
-          <h2 className="text-sm font-black text-white">Preços mensais dos planos</h2>
-          <p className="text-[11px] text-slate-500 mt-1">O preço alterado vale para novos contratos. Assinaturas existentes mantêm o valor contratado.</p>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {plans.map(plan => (
-            <div key={plan.id} className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
-              <label className="block text-xs font-black text-slate-200 mb-2" htmlFor={`plan-price-${plan.id}`}>{plan.name}</label>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500">R$</span>
-                <input
-                  id={`plan-price-${plan.id}`}
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  value={planPriceDrafts[plan.id] ?? ''}
-                  onChange={event => setPlanPriceDrafts(prev => ({ ...prev, [plan.id]: event.target.value }))}
-                  className="min-w-0 flex-1 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
-                />
-                <button
-                  type="button"
-                  disabled={savingPlanId === plan.id}
-                  onClick={() => handlePlanPriceSave(plan)}
-                  className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-[10px] font-black disabled:opacity-50"
-                >
-                  {savingPlanId === plan.id ? 'Salvando…' : 'Salvar'}
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
 
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
