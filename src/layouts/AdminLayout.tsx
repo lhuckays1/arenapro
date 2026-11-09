@@ -16,7 +16,6 @@ import {
   UserRound,
   ReceiptText,
   Beer,
-  MessageCircle,
   LogOut,
   Menu,
   X,
@@ -24,6 +23,8 @@ import {
   Building2,
   ExternalLink,
   ShieldCheck,
+  MessageCircle,
+  CreditCard,
 } from 'lucide-react';
 
 interface AdminLayoutProps {
@@ -114,15 +115,15 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
       icon: <Beer className="w-4 h-4" />,
     },
     {
-      name: 'WhatsApp',
-      path: '/admin/whatsapp',
-      icon: <MessageCircle className="w-4 h-4" />,
-    },
-    {
       name: 'Configurações',
       path: '/admin/configuracoes',
       icon: <Settings className="w-4 h-4" />,
     },
+    ...(profile?.role === 'SUPER_ADMIN' || profile?.role === 'ARENA_ADMIN' ? [{
+      name: 'WhatsApp',
+      path: '/admin/whatsapp',
+      icon: <MessageCircle className="w-4 h-4" />,
+    }] : []),
     {
       name: 'Usuários da Arena',
       path: '/admin/usuarios',
@@ -139,6 +140,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
             icon: (
               <ShieldCheck className="w-4 h-4" />
             ),
+          },
+          {
+            name: 'Planos comerciais',
+            path: '/admin/saas/planos',
+            icon: <CreditCard className="w-4 h-4" />,
           },
           ...operationalMenuItems,
         ]
@@ -210,7 +216,6 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
                       Pro
                     </span>
                   </span>
-
 
                 </div>
 
@@ -669,3 +674,4 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     </div>
   );
 };
+
