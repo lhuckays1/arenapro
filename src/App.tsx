@@ -33,6 +33,7 @@ import { StudentPaymentsPage } from './pages/admin/StudentPaymentsPage';
 import { TeacherDetailsPage } from './pages/admin/TeacherDetailsPage';
 import { SaaSPage } from './pages/admin/SaaSPage';
 import { SubscriptionPlansPage } from './pages/admin/SubscriptionPlansPage';
+import { ArenaSubscriptionPage } from './pages/admin/ArenaSubscriptionPage';
 import { SubscriptionBlockedPage } from './pages/admin/SubscriptionBlockedPage';
 import { hasOperationalSubscriptionAccess } from './utils/subscriptionAccess';
 
@@ -477,6 +478,19 @@ const AppContent: React.FC = () => {
             ? <SubscriptionPlansPage onNavigate={navigate} />
             : <SaaSPage onNavigate={navigate} />}
 
+        </AdminLayout>
+      );
+    }
+
+    if (currentPath === '/admin/assinatura') {
+      if (profile?.role !== 'ARENA_ADMIN') {
+        navigate(activeArena ? '/admin/agenda' : '/app/inicio', true);
+        return null;
+      }
+
+      return (
+        <AdminLayout currentPath={currentPath} onNavigate={navigate}>
+          <ArenaSubscriptionPage />
         </AdminLayout>
       );
     }
