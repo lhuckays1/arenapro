@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { Arena, ArenaSubscription, Profile, UserRole } from '../types';
 import { authService, type AuthSession } from '../services/auth.service';
 import { arenaService } from '../services/arena.service';
@@ -30,6 +30,7 @@ interface AuthContextType {
   resetPassword: (email: string) => Promise<void>;
   switchPersona: (role: UserRole) => Promise<void>;
   refreshProfile: () => Promise<void>;
+  refreshSubscription: () => Promise<ArenaSubscription | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -48,6 +49,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     useState<boolean>(false);
 
   const [loading, setLoading] = useState<boolean>(true);
+
+  const refreshSubscription = useCallback(async (): Promise<ArenaSubscription | null> => {
+    if (!activeArena || !profile || profile.role === 'CLIENT' || profile.role === 'SUPER_ADMIN') return null;
+    const subscription = await saasService.getSubscription(activeArena.id);
+    setActiveSubscription(subscription);
+    return subscription;
+  }, [activeArena?.id, profile?.id, profile?.role]);
 
   // ==========================================================
   // CARREGAR ARENAS PERMITIDAS PARA O USUÃRIO
@@ -540,6 +548,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         resetPassword,
         switchPersona,
         refreshProfile,
+        refreshSubscription,
       }}
     >
       {children}
@@ -559,5 +568,4 @@ export const useAuth = (): AuthContextType => {
 
   return context;
 };
-
 
