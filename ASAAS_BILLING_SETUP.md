@@ -4,10 +4,12 @@
 
 1. O Super Admin configura o preço mensal do plano.
 2. O administrador da arena com pagamento pendente ou vencido escolhe **Regularizar assinatura**.
-3. O ArenaPro cria um link hospedado de recorrência mensal no Asaas, com vencimento do boleto em 3 dias úteis. O pagador escolhe a forma de pagamento disponível na conta Asaas; os dados do cartão não passam pelo ArenaPro.
-4. O webhook do Asaas informa o resultado. Apenas a confirmação do pagamento ativa ou renova a assinatura; retornar do checkout não libera o acesso.
-5. Os eventos são idempotentes e o histórico registra apenas IDs, status, valores e datas necessários, sem guardar payload financeiro completo.
-6. A tolerância atual continua sendo de 5 dias. Pagamentos manuais são feitos pelo Super Admin e ficam bloqueados enquanto houver um gateway vinculado, para evitar cobrança duplicada.
+3. Na versão nova, a regularização ocorre dentro do ArenaPro: o administrador escolhe Pix ou boleto e preenche os dados exigidos para emissão. O ArenaPro mostra o QR/copia e cola do Pix ou a linha digitável e o link do boleto, sem redirecionar para a tela de checkout hospedada.
+4. Dados do pagador são enviados diretamente pelo backend ao Asaas para gerar a cobrança e não são armazenados no banco do ArenaPro. O comprovante e o pagamento ainda seguem as regras legais e de identificação do Asaas.
+5. Cartão não é coletado pelo ArenaPro enquanto a tokenização de produção não estiver aprovada pelo Asaas. Não armazenamos número de cartão nem código de segurança.
+6. O webhook do Asaas informa o resultado. Apenas a confirmação do pagamento ativa ou renova a assinatura; exibir o QR ou boleto não libera o acesso.
+7. Os eventos são idempotentes e o histórico registra apenas IDs, status, valores e datas necessários, sem guardar payload financeiro completo.
+8. A tolerância atual continua sendo de 5 dias. Pagamentos manuais são feitos pelo Super Admin e ficam bloqueados enquanto houver um gateway vinculado, para evitar cobrança duplicada.
 
 ## Configuração de Sandbox no Supabase
 
@@ -41,10 +43,11 @@ As funções e tabelas Pagar.me não são removidas nesta migração; isso prese
 ## Publicação e validação
 
 1. Aplicar `supabase/migrations/20261110010000_asaas_billing.sql` no projeto Supabase.
-2. Publicar `create-asaas-subscription-checkout` com JWT obrigatório e `asaas-billing-webhook` sem JWT (a própria função valida o token).
-3. Configurar as credenciais de Sandbox e cadastrar o webhook acima.
-4. Validar: criação do link, pagamento de teste, confirmação por webhook, histórico, renovação única, atraso e bloqueio após a tolerância.
-5. Só após a validação e aprovação dos preços, credenciais e termos, planejar separadamente a ativação de cobrança real.
+2. Aplicar `supabase/migrations/20261110011527_asaas_in_app_checkout.sql` no projeto Supabase.
+3. Publicar `create-asaas-subscription-checkout` com JWT obrigatório e `asaas-billing-webhook` sem JWT (a própria função valida o token).
+4. Configurar as credenciais de Sandbox e cadastrar o webhook acima.
+5. Validar: criação Pix/boleto, confirmação por webhook, histórico, renovação única, atraso e bloqueio após a tolerância.
+6. Só após a validação e aprovação dos preços, credenciais e termos, planejar separadamente a ativação de cobrança real.
 
 ## Documentação oficial
 
