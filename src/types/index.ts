@@ -76,6 +76,7 @@ export interface ArenaSubscription {
   external_plan_id?: string | null;
   external_checkout_id?: string | null;
   billing_provider?: 'ASAAS' | 'PAGARME' | null;
+  checkout_billing_type?: 'PIX' | 'BOLETO' | null;
   checkout_url?: string | null;
   checkout_url_created_at?: string | null;
   grace_period_days?: number;
