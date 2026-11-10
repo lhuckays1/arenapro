@@ -91,6 +91,7 @@ Deno.serve(async (req) => {
       billingType: "UNDEFINED",
       chargeType: "RECURRENT",
       subscriptionCycle: "MONTHLY",
+      dueDateLimitDays: 3,
       externalReference: subscription.id,
       notificationEnabled: true,
     });

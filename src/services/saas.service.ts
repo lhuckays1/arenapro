@@ -145,7 +145,13 @@ export const saasService = {
     const { data, error } = await supabase.functions.invoke('create-asaas-subscription-checkout', {
       body: { arena_id: arenaId },
     });
-    if (error) throw new Error(error.message || 'Não foi possível preparar o checkout.');
+    if (error) {
+      const response = (error as any).context;
+      const responseBody = response instanceof Response
+        ? await response.clone().json().catch(() => null)
+        : null;
+      throw new Error(responseBody?.error || error.message || 'Não foi possível preparar o checkout.');
+    }
     if (!data?.success || typeof data.checkout_url !== 'string') {
       throw new Error(data?.error || 'Não foi possível preparar o checkout do Asaas.');
     }

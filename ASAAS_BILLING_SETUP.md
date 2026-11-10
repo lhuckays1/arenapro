@@ -4,7 +4,7 @@
 
 1. O Super Admin configura o preço mensal do plano.
 2. O administrador da arena com pagamento pendente ou vencido escolhe **Regularizar assinatura**.
-3. O ArenaPro cria um link hospedado de recorrência mensal no Asaas. O pagador escolhe a forma de pagamento disponível na conta Asaas; os dados do cartão não passam pelo ArenaPro.
+3. O ArenaPro cria um link hospedado de recorrência mensal no Asaas, com vencimento do boleto em 3 dias úteis. O pagador escolhe a forma de pagamento disponível na conta Asaas; os dados do cartão não passam pelo ArenaPro.
 4. O webhook do Asaas informa o resultado. Apenas a confirmação do pagamento ativa ou renova a assinatura; retornar do checkout não libera o acesso.
 5. Os eventos são idempotentes e o histórico registra apenas IDs, status, valores e datas necessários, sem guardar payload financeiro completo.
 6. A tolerância atual continua sendo de 5 dias. Pagamentos manuais são feitos pelo Super Admin e ficam bloqueados enquanto houver um gateway vinculado, para evitar cobrança duplicada.
