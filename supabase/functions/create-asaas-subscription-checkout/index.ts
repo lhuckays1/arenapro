@@ -44,8 +44,9 @@ Deno.serve(async (req) => {
   if (!/^[0-9a-f-]{36}$/i.test(arenaId)) return json({ error: "Arena inválida." }, 400);
   if (billingType != null && billingType !== "PIX" && billingType !== "BOLETO") return json({ error: "Escolha Pix ou boleto." }, 400);
   const payer = payload.payer || {};
-  const name = String(payer.name || "").trim(), email = String(payer.email || "").trim().toLowerCase(), cpfCnpj = digits(payer.cpfCnpj), phone = digits(payer.phone), postalCode = digits(payer.postalCode), addressNumber = String(payer.addressNumber || "").trim();
-  if (billingType && (name.length < 3 || !validEmail(email) || ![11, 14].includes(cpfCnpj.length) || phone.length < 10 || postalCode.length !== 8 || !addressNumber)) return json({ error: "Preencha nome, e-mail, CPF/CNPJ, telefone, CEP e número do endereço para emitir a cobrança." }, 400);
+  const name = String(payer.name || "").trim(), email = String(payer.email || "").trim().toLowerCase(), cpfCnpj = digits(payer.cpfCnpj), rawPhone = digits(payer.phone), postalCode = digits(payer.postalCode), addressNumber = String(payer.addressNumber || "").trim();
+  const phone = rawPhone.startsWith("55") && [12, 13].includes(rawPhone.length) ? rawPhone.slice(2) : rawPhone;
+  if (billingType && (name.length < 3 || !validEmail(email) || ![11, 14].includes(cpfCnpj.length) || ![10, 11].includes(phone.length) || postalCode.length !== 8 || !addressNumber)) return json({ error: "Preencha nome, e-mail, CPF/CNPJ, telefone, CEP e número do endereço para emitir a cobrança." }, 400);
 
   const { data: membership } = await admin.from("arena_users").select("arena_id").eq("arena_id", arenaId).eq("user_id", authData.user.id).eq("role", "ARENA_ADMIN").eq("status", "ACTIVE").maybeSingle();
   if (!membership) return json({ error: "Somente o administrador da arena pode regularizar a assinatura." }, 403);
