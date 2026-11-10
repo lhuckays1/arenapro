@@ -156,7 +156,7 @@ export const saasService = {
     boleto?: { identification_field?: string | null; bank_slip_url?: string | null };
   }> {
     if (!isSupabaseConfigured) throw new Error('Supabase não configurado.');
-    const { data, error } = await supabase.functions.invoke('create-asaas-subscription-checkout', {
+    const { data, error } = await supabase.functions.invoke('create-asaas-oneoff-checkout', {
       body: { arena_id: input.arenaId, billing_type: input.billingType, payer: input.payer },
     });
     if (error) {
