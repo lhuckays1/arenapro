@@ -13,7 +13,8 @@ const asaasRequest = async (path: string, key: string, method = "GET", body?: un
   const response = await fetch(`${base}${path}`, { method, headers: { access_token: key, "Content-Type": "application/json", "User-Agent": "ArenaPro/1.0" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    console.error("Asaas request failed", method, path, response.status, JSON.stringify(data).slice(0, 500));
+    // Provider error payloads can echo payer fields; keep those out of application logs.
+    console.error("Asaas request failed", method, response.status);
     throw new AsaasError(`O Asaas não conseguiu preparar o pagamento (HTTP ${response.status}). Confira os dados informados.`, response.status);
   }
   return data;
@@ -127,6 +128,14 @@ Deno.serve(async (req) => {
     }
     if (!customerId) throw new Error("O Asaas não retornou um cadastro de pagador válido.");
 
+    // Retire o link Sandbox antigo antes da nova recorrência, para nunca deixar duas cobranças ativas.
+    if (subscription.external_checkout_id && Deno.env.get("ASAAS_API_URL") !== "https://api.asaas.com/v3") {
+      try { await asaasRequest(`/paymentLinks/${encodeURIComponent(subscription.external_checkout_id)}`, asaasKey, "DELETE"); }
+      catch (error) {
+        if (!(error instanceof AsaasError) || error.status !== 404) throw new Error("Não foi possível encerrar o checkout Sandbox anterior; nenhuma nova recorrência foi criada. Tente novamente ou contate o suporte.");
+      }
+    }
+
     const nextDueDate = dateInSaoPaulo(3);
     const created = await asaasRequest("/subscriptions", asaasKey, "POST", {
       customer: customerId, billingType, value: Math.round(amount * 100) / 100, cycle: "MONTHLY", nextDueDate,
@@ -141,11 +150,6 @@ Deno.serve(async (req) => {
     if (completeError || !completed?.success) {
       console.error("Asaas checkout persistence failed", completeError?.message || "operation mismatch", providerSubscriptionId);
       return json({ error: "A cobrança foi iniciada mas ainda estamos sincronizando. Aguarde alguns instantes e atualize a tela; não inicie outra cobrança." }, 202);
-    }
-    // Remove the previous sandbox hosted link only after the replacement recurring subscription is safely stored.
-    if (subscription.external_checkout_id && Deno.env.get("ASAAS_API_URL") !== "https://api.asaas.com/v3") {
-      try { await asaasRequest(`/paymentLinks/${encodeURIComponent(subscription.external_checkout_id)}`, asaasKey, "DELETE"); }
-      catch (error) { console.warn("Old sandbox payment link cleanup failed", error instanceof Error ? error.message : "unknown error"); }
     }
     return await pendingPayment(admin, asaasKey, providerSubscriptionId, billingType, false);
   } catch (error) {
