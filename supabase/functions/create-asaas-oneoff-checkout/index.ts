@@ -32,6 +32,12 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Método não permitido." }, 405);
   const supabaseUrl = Deno.env.get("SUPABASE_URL"), serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"), asaasKey = Deno.env.get("ASAAS_API_KEY");
   if (!supabaseUrl || !serviceRoleKey || !asaasKey) return json({ error: "A cobrança ainda não foi configurada no servidor." }, 503);
+  const asaasBaseUrl = Deno.env.get("ASAAS_API_URL") || "https://api-sandbox.asaas.com/v3";
+  const requestOrigin = req.headers.get("Origin") || "";
+  const sandboxPreviewOrigin = "https://arenapro-git-feat-pagarme-sandbox-billing-lhuckays1s-projects.vercel.app";
+  if (asaasBaseUrl === "https://api-sandbox.asaas.com/v3" && requestOrigin !== sandboxPreviewOrigin) {
+    return json({ error: "Pagamentos de teste só podem ser gerados no Preview. A cobrança real ainda não está ativada." }, 503);
+  }
   const authHeader = req.headers.get("Authorization") || "";
   if (!authHeader.startsWith("Bearer ")) return json({ error: "Usuário não autenticado." }, 401);
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
