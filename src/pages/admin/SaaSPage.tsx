@@ -162,7 +162,7 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
       setFeedback({
         type: 'success',
         message: status === 'ACTIVE'
-          ? 'Acesso liberado manualmente pelo SUPER_ADMIN. Isso não registra nem confirma um pagamento Pagar.me.'
+          ? 'Acesso liberado manualmente pelo SUPER_ADMIN. Isso não registra nem confirma um pagamento do gateway.'
           : `Assinatura alterada para ${translateSubscriptionStatus(status)}.`,
       });
       await load();
@@ -338,22 +338,22 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
                   </div>
 
                   <div className="flex flex-wrap gap-2">
-                    {sub && !sub.external_subscription_id && !['SUSPENDED', 'CANCELLED'].includes(sub.status) && (
+                    {sub && !sub.external_subscription_id && !sub.billing_provider && !['SUSPENDED', 'CANCELLED'].includes(sub.status) && (
                       <button
                         onClick={() => {
                           setManualRenewalFor({ arena, subscription: sub });
                           setManualRenewalForm(emptyManualRenewal);
                           setFeedback(null);
                         }}
-                        title="Registra um pagamento recebido fora do Pagar.me e renova por um mês."
+                        title="Registra um pagamento recebido fora do gateway e renova por um mês."
                         className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] font-black"
                       >
                         <Banknote className="w-3.5 h-3.5" /> Renovar manualmente
                       </button>
                     )}
-                    {sub?.external_subscription_id && (
-                      <span className="self-center text-[10px] text-slate-500" title="A renovação é processada pela recorrência vinculada ao Pagar.me.">
-                        Recorrência Pagar.me vinculada
+                    {sub?.billing_provider && (
+                      <span className="self-center text-[10px] text-slate-500" title="Esta assinatura já está ligada a um gateway. Encerre a cobrança lá antes de registrar uma renovação manual.">
+                        {sub.external_subscription_id ? `Recorrência ${sub.billing_provider} vinculada` : `Checkout ${sub.billing_provider} pendente`}
                       </span>
                     )}
                     {sub?.status !== 'ACTIVE' && (
@@ -480,7 +480,7 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
                   className="mt-0.5 accent-emerald-500"
                 />
                 <span className="text-[11px] leading-relaxed text-amber-100">
-                  Confirmo que recebi o valor mensal informado fora do Pagar.me. Esta ação registra o pagamento e renova o acesso; não realiza uma cobrança.
+                  Confirmo que recebi o valor mensal informado fora do gateway. Esta ação registra o pagamento e renova o acesso; não realiza uma cobrança.
                 </span>
               </label>
             </div>
@@ -609,5 +609,4 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
     </div>
   );
 };
-
 

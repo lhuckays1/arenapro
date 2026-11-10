@@ -1,2 +1,11 @@
 [functions.create-arena-owner]
 verify_jwt = false
+
+[functions.pagarme-billing-webhook]
+verify_jwt = false
+
+[functions.create-asaas-subscription-checkout]
+verify_jwt = true
+
+[functions.asaas-billing-webhook]
+verify_jwt = false

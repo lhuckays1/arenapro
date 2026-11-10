@@ -71,8 +71,8 @@ Deno.serve(async (req) => {
 
   if (error) {
     const message = error.message || "Não foi possível registrar a renovação manual.";
-    if (message.includes("PAGARME_RECURRING_SUBSCRIPTION_LINKED")) {
-      return json({ error: "Esta assinatura está vinculada a uma recorrência do Pagar.me. Para evitar cobrança duplicada, renove pelo Pagar.me ou encerre a recorrência antes de usar pagamento manual." }, 409);
+    if (message.includes("RECURRING_SUBSCRIPTION_LINKED")) {
+      return json({ error: "Esta assinatura está vinculada a uma recorrência automática. Para evitar cobranças duplicadas, regularize pelo gateway ou encerre a recorrência antes de usar pagamento manual." }, 409);
     }
     if (message.includes("SUBSCRIPTION_REQUIRES_REVIEW")) {
       return json({ error: "A assinatura está suspensa ou cancelada. Revise a situação antes de renová-la." }, 409);
@@ -87,4 +87,3 @@ Deno.serve(async (req) => {
 
   return json({ success: true, renewal: data });
 });
-

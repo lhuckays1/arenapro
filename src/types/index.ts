@@ -74,6 +74,8 @@ export interface ArenaSubscription {
   external_customer_id?: string | null;
   external_subscription_id?: string | null;
   external_plan_id?: string | null;
+  external_checkout_id?: string | null;
+  billing_provider?: 'ASAAS' | 'PAGARME' | null;
   checkout_url?: string | null;
   checkout_url_created_at?: string | null;
   grace_period_days?: number;
@@ -86,7 +88,7 @@ export interface ArenaSubscription {
 export interface ArenaSubscriptionPayment {
   id: string;
   subscription_id: string;
-  provider: 'PAGARME' | 'MANUAL';
+  provider: 'ASAAS' | 'PAGARME' | 'MANUAL';
   provider_payment_id?: string | null;
   event_id?: string | null;
   status: 'PENDING' | 'PAID' | 'FAILED' | 'CANCELED' | 'REFUNDED';
@@ -451,6 +453,5 @@ export interface PendingReservationItem {
   pendingAmount: number;
   paymentStatus: PaymentStatus;
 }
-
 
 

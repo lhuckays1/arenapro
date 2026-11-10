@@ -140,14 +140,14 @@ export const saasService = {
     } as ArenaSubscription;
   },
 
-  async createPagarmeCheckout(arenaId: string): Promise<{ checkout_url: string; reused: boolean }> {
+  async createAsaasCheckout(arenaId: string): Promise<{ checkout_url: string; reused: boolean }> {
     if (!isSupabaseConfigured) throw new Error('Supabase não configurado.');
-    const { data, error } = await supabase.functions.invoke('create-pagarme-subscription-checkout', {
+    const { data, error } = await supabase.functions.invoke('create-asaas-subscription-checkout', {
       body: { arena_id: arenaId },
     });
     if (error) throw new Error(error.message || 'Não foi possível preparar o checkout.');
     if (!data?.success || typeof data.checkout_url !== 'string') {
-      throw new Error(data?.error || 'Não foi possível preparar o checkout.');
+      throw new Error(data?.error || 'Não foi possível preparar o checkout do Asaas.');
     }
     return { checkout_url: data.checkout_url, reused: Boolean(data.reused) };
   },
@@ -264,5 +264,4 @@ export const saasService = {
     return { arena: arena.data as Arena | null, subscription };
   },
 };
-
 

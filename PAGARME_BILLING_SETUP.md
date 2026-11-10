@@ -1,4 +1,6 @@
-# ArenaPro — cobrança recorrente com Pagar.me
+# ArenaPro — integração legada do Pagar.me
+
+> A integração atual em desenvolvimento migra novos checkouts para o Asaas Sandbox. Este documento descreve somente a configuração antiga do Pagar.me e não deve ser usado para iniciar novas cobranças. O código e o histórico antigos são mantidos até a validação e a transição segura das assinaturas existentes.
 
 ## Fluxo implementado
 
@@ -45,4 +47,3 @@ Eventos necessários: `subscription.created`, `subscription.canceled`, `invoice.
 ## Valores
 
 Os valores existentes no banco são defaults de desenvolvimento. A tela do Super Admin permite ajustá-los, mas a cobrança live continua bloqueada até a configuração explícita do segredo de produção.
-

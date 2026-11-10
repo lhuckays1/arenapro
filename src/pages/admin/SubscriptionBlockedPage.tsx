@@ -35,7 +35,7 @@ export const SubscriptionBlockedPage: React.FC = () => {
     setLoadingCheckout(true);
     setError('');
     try {
-      const checkout = await saasService.createPagarmeCheckout(activeArena.id);
+      const checkout = await saasService.createAsaasCheckout(activeArena.id);
       window.location.assign(checkout.checkout_url);
     } catch (reason: any) {
       setError(reason?.message || 'Não foi possível abrir o pagamento.');
@@ -128,5 +128,4 @@ export const SubscriptionBlockedPage: React.FC = () => {
     </div>
   );
 };
-
 
