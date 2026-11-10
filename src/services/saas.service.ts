@@ -140,10 +140,24 @@ export const saasService = {
     } as ArenaSubscription;
   },
 
-  async createAsaasCheckout(arenaId: string): Promise<{ checkout_url: string; reused: boolean }> {
+  async createAsaasCheckout(input: {
+    arenaId: string;
+    billingType: 'PIX' | 'BOLETO';
+    payer: { name: string; email: string; cpfCnpj: string; phone: string; postalCode: string; addressNumber: string };
+  }): Promise<{
+    reused: boolean;
+    processing?: boolean;
+    message?: string;
+    billing_type?: 'PIX' | 'BOLETO';
+    payment_id?: string;
+    due_date?: string | null;
+    amount?: number;
+    pix?: { encoded_image?: string | null; payload?: string | null; expiration_date?: string | null };
+    boleto?: { identification_field?: string | null; bank_slip_url?: string | null };
+  }> {
     if (!isSupabaseConfigured) throw new Error('Supabase não configurado.');
     const { data, error } = await supabase.functions.invoke('create-asaas-subscription-checkout', {
-      body: { arena_id: arenaId },
+      body: { arena_id: input.arenaId, billing_type: input.billingType, payer: input.payer },
     });
     if (error) {
       const response = (error as any).context;
@@ -152,10 +166,20 @@ export const saasService = {
         : null;
       throw new Error(responseBody?.error || error.message || 'Não foi possível preparar o checkout.');
     }
-    if (!data?.success || typeof data.checkout_url !== 'string') {
+    if (!data?.success) {
       throw new Error(data?.error || 'Não foi possível preparar o checkout do Asaas.');
     }
-    return { checkout_url: data.checkout_url, reused: Boolean(data.reused) };
+    return data as {
+      reused: boolean;
+      processing?: boolean;
+      message?: string;
+      billing_type?: 'PIX' | 'BOLETO';
+      payment_id?: string;
+      due_date?: string | null;
+      amount?: number;
+      pix?: { encoded_image?: string | null; payload?: string | null; expiration_date?: string | null };
+      boleto?: { identification_field?: string | null; bank_slip_url?: string | null };
+    };
   },
 
   async recordManualSubscriptionRenewal(input: {
