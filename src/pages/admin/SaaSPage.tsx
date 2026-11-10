@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Building2, CreditCard, Crown, Mail, Plus, RefreshCw, Search,
+  Banknote, Building2, CreditCard, Crown, Mail, Plus, RefreshCw, Search,
   ShieldCheck, UserPlus, X, CheckCircle2, Clock3, Ban, AlertTriangle
 } from 'lucide-react';
 import { Arena, ArenaSubscription, SubscriptionPlan } from '../../types';
@@ -13,6 +13,14 @@ interface SaaSPageProps {
 }
 
 type Feedback = { type: 'success' | 'error'; message: string } | null;
+type ManualPaymentMethod = 'PIX' | 'CASH' | 'BANK_TRANSFER' | 'CREDIT_CARD' | 'DEBIT_CARD' | 'OTHER';
+
+const emptyManualRenewal = {
+  paymentMethod: 'PIX' as ManualPaymentMethod,
+  reference: '',
+  notes: '',
+  confirmed: false,
+};
 
 const emptyForm = {
   arenaName: '',
@@ -41,6 +49,9 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
   const [owners, setOwners] = useState<Array<{ arena_id: string; user_id: string; role: string; profile?: any }>>([]);
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [manualRenewalFor, setManualRenewalFor] = useState<{ arena: Arena; subscription: ArenaSubscription } | null>(null);
+  const [manualRenewalForm, setManualRenewalForm] = useState(emptyManualRenewal);
+  const [savingManualRenewal, setSavingManualRenewal] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -151,12 +162,50 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
       setFeedback({
         type: 'success',
         message: status === 'ACTIVE'
-          ? 'Assinatura comercial ativada.'
+          ? 'Acesso liberado manualmente pelo SUPER_ADMIN. Isso não registra nem confirma um pagamento do gateway.'
           : `Assinatura alterada para ${translateSubscriptionStatus(status)}.`,
       });
       await load();
     } catch (error: any) {
       setFeedback({ type: 'error', message: error?.message || 'Não foi possível atualizar a assinatura.' });
+    }
+  };
+
+  const handleManualRenewal = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!manualRenewalFor) return;
+    if (!manualRenewalForm.confirmed) {
+      setFeedback({ type: 'error', message: 'Confirme que o pagamento foi recebido antes de renovar.' });
+      return;
+    }
+    if (manualRenewalForm.notes.trim().length < 5) {
+      setFeedback({ type: 'error', message: 'Informe uma observação de pelo menos 5 caracteres para o histórico.' });
+      return;
+    }
+
+    setSavingManualRenewal(true);
+    setFeedback(null);
+    try {
+      const renewal = await saasService.recordManualSubscriptionRenewal({
+        subscriptionId: manualRenewalFor.subscription.id,
+        paymentMethod: manualRenewalForm.paymentMethod,
+        reference: manualRenewalForm.reference.trim() || undefined,
+        notes: manualRenewalForm.notes.trim(),
+      });
+      const endDate = new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(
+        new Date(`${renewal.current_period_end}T00:00:00Z`)
+      );
+      setManualRenewalFor(null);
+      setManualRenewalForm(emptyManualRenewal);
+      setFeedback({
+        type: 'success',
+        message: `Pagamento manual registrado para ${manualRenewalFor.arena.name}. Assinatura ativa até ${endDate}.`,
+      });
+      await load();
+    } catch (error: any) {
+      setFeedback({ type: 'error', message: error?.message || 'Não foi possível registrar a renovação manual.' });
+    } finally {
+      setSavingManualRenewal(false);
     }
   };
 
@@ -191,15 +240,20 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
             </div>
             <h1 className="text-2xl md:text-3xl font-black text-white mt-2">Arenas e Assinaturas</h1>
             <p className="text-sm text-slate-400 mt-1 max-w-2xl">
-              Somente o SUPER_ADMIN cria proprietários. A assinatura comercial é controlada separadamente do vínculo operacional ativo.
+              Somente o SUPER_ADMIN cria proprietários. Toda nova arena começa com assinatura PENDENTE e só libera a operação após pagamento.
             </p>
           </div>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black"
-          >
-            <Plus className="w-4 h-4" /> NOVA ARENA + PROPRIETÁRIO
-          </button>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button onClick={() => onNavigate('/admin/saas/planos')} className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-xs font-black">
+              <CreditCard className="w-4 h-4" /> EDITAR PLANOS
+            </button>
+            <button
+              onClick={() => setShowCreate(true)}
+              className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black"
+            >
+              <Plus className="w-4 h-4" /> NOVA ARENA + PROPRIETÁRIO
+            </button>
+          </div>
         </div>
       </div>
 
@@ -236,7 +290,7 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
       <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden">
         <div className="p-5 border-b border-slate-800">
           <h2 className="text-sm font-black text-white">Tenants comerciais</h2>
-          <p className="text-xs text-slate-500 mt-1">O acesso operacional exige vínculo ativo e permissões da arena.</p>
+          <p className="text-xs text-slate-500 mt-1">Acesso operacional depende da assinatura.</p>
         </div>
 
         {loading ? (
@@ -284,12 +338,31 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
                   </div>
 
                   <div className="flex flex-wrap gap-2">
+                    {sub && !sub.external_subscription_id && !sub.billing_provider && !['SUSPENDED', 'CANCELLED'].includes(sub.status) && (
+                      <button
+                        onClick={() => {
+                          setManualRenewalFor({ arena, subscription: sub });
+                          setManualRenewalForm(emptyManualRenewal);
+                          setFeedback(null);
+                        }}
+                        title="Registra um pagamento recebido fora do gateway e renova por um mês."
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] font-black"
+                      >
+                        <Banknote className="w-3.5 h-3.5" /> Renovar manualmente
+                      </button>
+                    )}
+                    {sub?.billing_provider && (
+                      <span className="self-center text-[10px] text-slate-500" title="Esta assinatura já está ligada a um gateway. Encerre a cobrança lá antes de registrar uma renovação manual.">
+                        {sub.external_subscription_id ? `Recorrência ${sub.billing_provider} vinculada` : `Checkout ${sub.billing_provider} pendente`}
+                      </span>
+                    )}
                     {sub?.status !== 'ACTIVE' && (
                       <button
                         onClick={() => sub && handleSubscription(sub, 'ACTIVE')}
+                        title="Concessão manual de acesso; não representa um pagamento confirmado."
                         className="px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] font-black"
                       >
-                        Ativar
+                        Conceder acesso
                       </button>
                     )}
                     {sub?.status === 'ACTIVE' && (
@@ -316,6 +389,122 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
           </div>
         )}
       </div>
+
+      {manualRenewalFor && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <form onSubmit={handleManualRenewal} className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-3xl shadow-2xl overflow-hidden">
+            <div className="p-5 border-b border-slate-800 flex items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 text-emerald-300 text-xs font-bold uppercase tracking-wider">
+                  <Banknote className="w-4 h-4" /> Renovação manual
+                </div>
+                <h2 className="text-lg font-black text-white mt-2">{manualRenewalFor.arena.name}</h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  O pagamento será registrado no histórico e o período será renovado por um mês.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={savingManualRenewal}
+                onClick={() => setManualRenewalFor(null)}
+                aria-label="Fechar renovação manual"
+                className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white disabled:opacity-50"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {feedback?.type === 'error' && (
+                <div role="alert" className="p-3 rounded-xl border border-rose-500/30 bg-rose-950/40 text-xs text-rose-300">
+                  {feedback.message}
+                </div>
+              )}
+
+              <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+                <div className="text-[10px] uppercase font-bold text-slate-500">Plano e valor mensal contratado</div>
+                <div className="text-sm font-black text-white mt-1">
+                  {manualRenewalFor.subscription.plan?.name || 'Plano'} · R$ {Number(manualRenewalFor.subscription.monthly_price).toFixed(2).replace('.', ',')}
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="manual-renewal-payment-method" className="block text-xs font-bold text-slate-300 mb-1.5">Forma de pagamento recebida</label>
+                <select
+                  id="manual-renewal-payment-method"
+                  value={manualRenewalForm.paymentMethod}
+                  onChange={event => setManualRenewalForm(prev => ({ ...prev, paymentMethod: event.target.value as ManualPaymentMethod }))}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white outline-none focus:border-emerald-500"
+                >
+                  <option value="PIX">Pix</option>
+                  <option value="CASH">Dinheiro</option>
+                  <option value="BANK_TRANSFER">Transferência bancária</option>
+                  <option value="CREDIT_CARD">Cartão de crédito</option>
+                  <option value="DEBIT_CARD">Cartão de débito</option>
+                  <option value="OTHER">Outro</option>
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="manual-renewal-reference" className="block text-xs font-bold text-slate-300 mb-1.5">Referência do comprovante (opcional)</label>
+                <input
+                  id="manual-renewal-reference"
+                  value={manualRenewalForm.reference}
+                  onChange={event => setManualRenewalForm(prev => ({ ...prev, reference: event.target.value }))}
+                  maxLength={120}
+                  placeholder="Ex.: final do comprovante ou identificador"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="manual-renewal-notes" className="block text-xs font-bold text-slate-300 mb-1.5">Observação para auditoria</label>
+                <textarea
+                  id="manual-renewal-notes"
+                  value={manualRenewalForm.notes}
+                  onChange={event => setManualRenewalForm(prev => ({ ...prev, notes: event.target.value }))}
+                  minLength={5}
+                  maxLength={500}
+                  rows={3}
+                  required
+                  placeholder="Ex.: mensalidade de novembro recebida por Pix"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <label className="flex items-start gap-2.5 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={manualRenewalForm.confirmed}
+                  onChange={event => setManualRenewalForm(prev => ({ ...prev, confirmed: event.target.checked }))}
+                  className="mt-0.5 accent-emerald-500"
+                />
+                <span className="text-[11px] leading-relaxed text-amber-100">
+                  Confirmo que recebi o valor mensal informado fora do gateway. Esta ação registra o pagamento e renova o acesso; não realiza uma cobrança.
+                </span>
+              </label>
+            </div>
+
+            <div className="p-5 border-t border-slate-800 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={savingManualRenewal}
+                onClick={() => setManualRenewalFor(null)}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                disabled={savingManualRenewal || !manualRenewalForm.confirmed}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black disabled:opacity-50"
+              >
+                <Banknote className="w-4 h-4" />
+                {savingManualRenewal ? 'Registrando…' : 'Registrar pagamento e renovar'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {showCreate && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -420,3 +609,4 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
     </div>
   );
 };
+

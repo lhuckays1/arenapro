@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { Arena, ArenaSubscription, SubscriptionPlan } from '../types';
+import { Arena, ArenaSubscription, ArenaSubscriptionPayment, SubscriptionPlan } from '../types';
 
 export interface CreateArenaOwnerPayload {
   arena: {
@@ -23,15 +23,45 @@ export interface CreateArenaOwnerPayload {
 }
 
 export const saasService = {
-  async getPlans(): Promise<SubscriptionPlan[]> {
+  async getPlans(includeInactive = false): Promise<SubscriptionPlan[]> {
     if (!isSupabaseConfigured) return [];
-    const { data, error } = await supabase
-      .from('subscription_plans')
-      .select('*')
-      .eq('status', 'ACTIVE')
-      .order('monthly_price');
+    let query = supabase.from('subscription_plans').select('*');
+    if (!includeInactive) query = query.eq('status', 'ACTIVE');
+    const { data, error } = await query.order('monthly_price');
     if (error) throw error;
     return (data || []) as SubscriptionPlan[];
+  },
+
+  async updatePlanMonthlyPrice(planId: string, monthlyPrice: number): Promise<void> {
+    if (!isSupabaseConfigured) throw new Error('Supabase não configurado.');
+    if (!Number.isFinite(monthlyPrice) || monthlyPrice <= 0) throw new Error('Informe um valor mensal maior que zero.');
+    const { error } = await supabase
+      .from('subscription_plans')
+      .update({ monthly_price: Math.round(monthlyPrice * 100) / 100, updated_at: new Date().toISOString() })
+      .eq('id', planId);
+    if (error) throw error;
+  },
+
+  async updateSubscriptionPlan(planId: string, updates: Pick<SubscriptionPlan, 'name' | 'code' | 'monthly_price' | 'max_courts' | 'max_staff_users' | 'features' | 'status'>): Promise<void> {
+    if (!isSupabaseConfigured) throw new Error('Supabase não configurado.');
+    if (!updates.name.trim() || !updates.code.trim()) throw new Error('Nome e código do plano são obrigatórios.');
+    if (!Number.isFinite(updates.monthly_price) || updates.monthly_price <= 0) throw new Error('Informe um valor mensal maior que zero.');
+    for (const [label, value] of [['quadras', updates.max_courts], ['usuários da equipe', updates.max_staff_users]] as const) {
+      if (value !== null && value !== undefined && (!Number.isInteger(value) || value < 0)) {
+        throw new Error(`O limite de ${label} deve ser um número inteiro igual ou maior que zero.`);
+      }
+    }
+    const { error } = await supabase
+      .from('subscription_plans')
+      .update({
+        ...updates,
+        name: updates.name.trim(),
+        code: updates.code.trim().toUpperCase(),
+        monthly_price: Math.round(updates.monthly_price * 100) / 100,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', planId);
+    if (error) throw error;
   },
 
   async getSubscriptions(): Promise<ArenaSubscription[]> {
@@ -110,6 +140,89 @@ export const saasService = {
     } as ArenaSubscription;
   },
 
+  async createAsaasCheckout(input: {
+    arenaId: string;
+    billingType: 'PIX' | 'BOLETO';
+    payer: { name: string; email: string; cpfCnpj: string; phone: string; postalCode: string; addressNumber: string };
+  }): Promise<{
+    reused: boolean;
+    processing?: boolean;
+    message?: string;
+    billing_type?: 'PIX' | 'BOLETO';
+    payment_id?: string;
+    due_date?: string | null;
+    amount?: number;
+    pix?: { encoded_image?: string | null; payload?: string | null; expiration_date?: string | null };
+    boleto?: { identification_field?: string | null; bank_slip_url?: string | null };
+  }> {
+    if (!isSupabaseConfigured) throw new Error('Supabase não configurado.');
+    const { data, error } = await supabase.functions.invoke('create-asaas-oneoff-checkout', {
+      body: { arena_id: input.arenaId, billing_type: input.billingType, payer: input.payer },
+    });
+    if (error) {
+      const response = (error as any).context;
+      const responseBody = response instanceof Response
+        ? await response.clone().json().catch(() => null)
+        : null;
+      throw new Error(responseBody?.error || error.message || 'Não foi possível preparar o checkout.');
+    }
+    if (!data?.success) {
+      throw new Error(data?.error || 'Não foi possível preparar o checkout do Asaas.');
+    }
+    return data as {
+      reused: boolean;
+      processing?: boolean;
+      message?: string;
+      billing_type?: 'PIX' | 'BOLETO';
+      payment_id?: string;
+      due_date?: string | null;
+      amount?: number;
+      pix?: { encoded_image?: string | null; payload?: string | null; expiration_date?: string | null };
+      boleto?: { identification_field?: string | null; bank_slip_url?: string | null };
+    };
+  },
+
+  async recordManualSubscriptionRenewal(input: {
+    subscriptionId: string;
+    paymentMethod: 'PIX' | 'CASH' | 'BANK_TRANSFER' | 'CREDIT_CARD' | 'DEBIT_CARD' | 'OTHER';
+    reference?: string;
+    notes: string;
+  }): Promise<{ current_period_end: string; amount_cents: number }> {
+    if (!isSupabaseConfigured) throw new Error('Supabase não configurado.');
+    const { data, error } = await supabase.functions.invoke('record-manual-subscription-renewal', {
+      body: {
+        subscription_id: input.subscriptionId,
+        payment_method: input.paymentMethod,
+        reference: input.reference || null,
+        notes: input.notes,
+        confirmed_payment_received: true,
+      },
+    });
+    if (error) {
+      const response = (error as any).context;
+      const responseBody = response instanceof Response
+        ? await response.clone().json().catch(() => null)
+        : null;
+      throw new Error(responseBody?.error || error.message || 'Não foi possível registrar a renovação manual.');
+    }
+    if (!data?.success || !data?.renewal?.current_period_end) {
+      throw new Error(data?.error || 'Não foi possível registrar a renovação manual.');
+    }
+    return data.renewal;
+  },
+
+  async getSubscriptionPayments(subscriptionId: string): Promise<ArenaSubscriptionPayment[]> {
+    if (!isSupabaseConfigured) return [];
+    const { data, error } = await supabase
+      .from('arena_subscription_payments')
+      .select('*')
+      .eq('subscription_id', subscriptionId)
+      .order('created_at', { ascending: false })
+      .limit(12);
+    if (error) throw error;
+    return (data || []) as ArenaSubscriptionPayment[];
+  },
+
   async createArenaOwner(payload: CreateArenaOwnerPayload) {
     if (!isSupabaseConfigured) {
       throw new Error('O onboarding de proprietários exige Supabase configurado.');
@@ -154,7 +267,6 @@ export const saasService = {
       end.setMonth(end.getMonth() + 1);
       updates.current_period_start = start.toISOString().slice(0, 10);
       updates.current_period_end = end.toISOString().slice(0, 10);
-      updates.paid_at = new Date().toISOString();
     } else if (periodEnd !== undefined) {
       updates.current_period_end = periodEnd;
     }
@@ -182,3 +294,4 @@ export const saasService = {
     return { arena: arena.data as Arena | null, subscription };
   },
 };
+

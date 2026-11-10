@@ -32,7 +32,10 @@ import { StudentsPage } from './pages/admin/StudentsPage';
 import { StudentPaymentsPage } from './pages/admin/StudentPaymentsPage';
 import { TeacherDetailsPage } from './pages/admin/TeacherDetailsPage';
 import { SaaSPage } from './pages/admin/SaaSPage';
+import { SubscriptionPlansPage } from './pages/admin/SubscriptionPlansPage';
+import { ArenaSubscriptionPage } from './pages/admin/ArenaSubscriptionPage';
 import { SubscriptionBlockedPage } from './pages/admin/SubscriptionBlockedPage';
+import { hasOperationalSubscriptionAccess } from './utils/subscriptionAccess';
 
 // ============================================================
 // CLIENT / PUBLIC ARENA PAGES
@@ -55,8 +58,8 @@ const AppContent: React.FC = () => {
     user,
     profile,
     activeArena,
-    operationalAccess,
-    operationalAccessLoading,
+    activeSubscription,
+    subscriptionLoading,
     loading,
   } = useAuth();
 
@@ -438,7 +441,7 @@ const AppContent: React.FC = () => {
     // ========================================================
 
     if (
-      currentPath === '/admin/saas'
+      currentPath === '/admin/saas' || currentPath === '/admin/saas/planos'
     ) {
 
       if (
@@ -471,21 +474,34 @@ const AppContent: React.FC = () => {
           onNavigate={navigate}
         >
 
-          <SaaSPage
-            onNavigate={navigate}
-          />
+          {currentPath === '/admin/saas/planos'
+            ? <SubscriptionPlansPage onNavigate={navigate} />
+            : <SaaSPage onNavigate={navigate} />}
 
+        </AdminLayout>
+      );
+    }
+
+    if (currentPath === '/admin/assinatura') {
+      if (profile?.role !== 'ARENA_ADMIN') {
+        navigate(activeArena ? '/admin/agenda' : '/app/inicio', true);
+        return null;
+      }
+
+      return (
+        <AdminLayout currentPath={currentPath} onNavigate={navigate}>
+          <ArenaSubscriptionPage />
         </AdminLayout>
       );
     }
 
 
     // ========================================================
-    // CONTROLE DE ACESSO OPERACIONAL
+    // CONTROLE DE ASSINATURA
     //
     // SUPER_ADMIN não depende de assinatura.
     //
-    // ARENA_ADMIN / ARENA_STAFF precisam de vínculo ativo validado no servidor.
+    // ARENA_ADMIN / ARENA_STAFF precisam de ACTIVE.
     // ========================================================
 
     if (
@@ -509,12 +525,12 @@ const AppContent: React.FC = () => {
       // Verificando assinatura
       // ------------------------------------------------------
 
-      if (operationalAccessLoading) {
+      if (subscriptionLoading) {
 
         return (
           <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400 text-sm">
 
-            Verificando acesso à arena...
+            Verificando assinatura da arena...
 
           </div>
         );
@@ -526,7 +542,7 @@ const AppContent: React.FC = () => {
       // ------------------------------------------------------
 
       if (
-        !operationalAccess
+        !hasOperationalSubscriptionAccess(activeSubscription)
       ) {
 
         return (
@@ -639,10 +655,10 @@ const AppContent: React.FC = () => {
           />
         )}
 
-
         {currentPath === '/admin/whatsapp' && (
           <WhatsAppConnectionPage onNavigate={navigate} />
         )}
+
 
         {currentPath === '/admin/usuarios' && (
           <UsersPage
@@ -825,3 +841,4 @@ export default function App() {
     </AuthProvider>
   );
 }
+
