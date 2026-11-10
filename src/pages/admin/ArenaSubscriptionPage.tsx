@@ -62,13 +62,6 @@ export const ArenaSubscriptionPage: React.FC = () => {
               <div className="rounded-2xl bg-slate-950 border border-slate-800 p-4"><div className="text-[10px] uppercase font-bold text-slate-500">Próximo vencimento</div><div className="text-sm font-bold text-slate-200 mt-2">{date(activeSubscription.current_period_end)}</div></div>
             </div>
 
-            <div className="mt-5 rounded-2xl border border-slate-800 p-4">
-              <h3 className="text-xs font-black text-white">Limites incluídos</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 text-xs">
-                <div className="flex items-center justify-between rounded-xl bg-slate-950 p-3"><span className="text-slate-400">Quadras</span><strong className="text-slate-200">{plan?.max_courts == null ? 'Sem limite' : plan.max_courts}</strong></div>
-                <div className="flex items-center justify-between rounded-xl bg-slate-950 p-3"><span className="text-slate-400">Usuários da equipe</span><strong className="text-slate-200">{plan?.max_staff_users == null ? 'Sem limite' : plan.max_staff_users}</strong></div>
-              </div>
-            </div>
           </section>
 
           <section className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden">
