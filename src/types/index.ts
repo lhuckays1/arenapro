@@ -79,6 +79,7 @@ export interface ArenaSubscription {
   checkout_billing_type?: 'PIX' | 'BOLETO' | null;
   checkout_url?: string | null;
   checkout_url_created_at?: string | null;
+  checkout_operation_started_at?: string | null;
   grace_period_days?: number;
   notes?: string | null;
   created_at: string;
