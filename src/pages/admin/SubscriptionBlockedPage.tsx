@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { AlertTriangle, Check, Clipboard, CreditCard, ExternalLink, LogOut, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { saasService } from '../../services/saas.service';
+import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import type { ArenaSubscriptionPayment } from '../../types';
 import { hasOperationalSubscriptionAccess } from '../../utils/subscriptionAccess';
 
@@ -10,7 +11,7 @@ type Payer = { name: string; email: string; cpfCnpj: string; phone: string; post
 type Checkout = Awaited<ReturnType<typeof saasService.createAsaasCheckout>>;
 
 export const SubscriptionBlockedPage: React.FC = () => {
-  const { activeArena, activeSubscription, signOut } = useAuth();
+  const { activeArena, activeSubscription, refreshSubscription, signOut } = useAuth();
   const [payments, setPayments] = useState<ArenaSubscriptionPayment[]>([]);
   const [loadingCheckout, setLoadingCheckout] = useState(false);
   const [error, setError] = useState('');
@@ -27,9 +28,50 @@ export const SubscriptionBlockedPage: React.FC = () => {
 
   useEffect(() => {
     if (!activeSubscription?.id) return;
+    let cancelled = false;
+    let refreshing = false;
     setLoadingPayments(true);
-    saasService.getSubscriptionPayments(activeSubscription.id).then(setPayments).catch(() => setPayments([])).finally(() => setLoadingPayments(false));
-  }, [activeSubscription?.id]);
+
+    const refreshBillingState = async () => {
+      if (cancelled || refreshing || document.visibilityState === 'hidden') return;
+      refreshing = true;
+      try {
+        const subscription = await refreshSubscription();
+        if (subscription && hasOperationalSubscriptionAccess(subscription)) return;
+        const latestPayments = await saasService.getSubscriptionPayments(activeSubscription.id);
+        if (!cancelled) setPayments(latestPayments);
+      } catch {
+        // Keep the last displayed state and retry on the next poll.
+      } finally {
+        refreshing = false;
+        if (!cancelled) setLoadingPayments(false);
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void refreshBillingState();
+    };
+
+    void refreshBillingState();
+    const timer = window.setInterval(() => void refreshBillingState(), 5000);
+    const channel = isSupabaseConfigured && activeArena?.id
+      ? supabase.channel(`billing-status-${activeArena.id}`)
+          .on('postgres_changes', {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'arena_subscriptions',
+            filter: `arena_id=eq.${activeArena.id}`,
+          }, () => void refreshBillingState())
+          .subscribe()
+      : null;
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      if (channel) void supabase.removeChannel(channel);
+    };
+  }, [activeArena?.id, activeSubscription?.id, refreshSubscription]);
 
   const formatDate = (value?: string | null) => value ? new Date(`${value.slice(0, 10)}T00:00:00`).toLocaleDateString('pt-BR') : '—';
   const setPayerField = (field: keyof Payer, value: string) => setPayer(current => ({ ...current, [field]: value }));
@@ -44,7 +86,16 @@ export const SubscriptionBlockedPage: React.FC = () => {
         saasService.getSubscriptionPayments(activeSubscription?.id || '').then(setPayments).catch(() => undefined);
       }
     } catch (reason: any) {
-      setError(reason?.message || 'Não foi possível preparar o pagamento.');
+      const message = reason?.message || 'Não foi possível preparar o pagamento.';
+      if (message.includes('já está ativa')) {
+        try {
+          const subscription = await refreshSubscription();
+          if (subscription && hasOperationalSubscriptionAccess(subscription)) return;
+        } catch {
+          // The regular polling below will retry the subscription check.
+        }
+      }
+      setError(message);
     } finally { setLoadingCheckout(false); }
   };
 
@@ -97,6 +148,7 @@ export const SubscriptionBlockedPage: React.FC = () => {
         )}
 
         {checkout && <div className="mt-5 text-left rounded-2xl border border-slate-800 bg-slate-950 p-4">
+          <p className="mb-3 text-[11px] text-emerald-300">Após o Asaas confirmar o pagamento, esta tela libera o painel automaticamente.</p>
           <div className="flex items-center justify-between gap-2"><div><div className="text-sm font-black text-white">{checkout.processing ? 'Pagamento em preparação' : checkout.billing_type === 'PIX' ? 'Pague com Pix' : 'Pague com boleto'}</div><div className="mt-1 text-[11px] text-slate-400">{checkout.amount ? `Valor: R$ ${checkout.amount.toFixed(2).replace('.', ',')} • ` : ''}Vencimento: {formatDate(checkout.due_date)}</div></div><button disabled={loadingCheckout} onClick={startCheckout} className="rounded-lg bg-slate-800 px-3 py-2 text-[11px] font-bold disabled:opacity-50">{loadingCheckout ? 'Atualizando…' : 'Atualizar cobrança'}</button></div>
           {checkout.processing && <p className="mt-3 text-xs text-slate-400">{checkout.message || 'O provedor está gerando os dados. Atualize em alguns instantes; não inicie outra cobrança.'}</p>}
           {checkout.pix?.encoded_image && <img className="mx-auto mt-4 w-52 rounded-xl bg-white p-2" alt="QR Code Pix para pagamento" src={`data:image/png;base64,${checkout.pix.encoded_image}`} />}
