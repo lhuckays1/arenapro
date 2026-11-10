@@ -19,6 +19,7 @@ const emptyManualRenewal = {
   paymentMethod: 'PIX' as ManualPaymentMethod,
   reference: '',
   notes: '',
+  durationDays: 30,
   confirmed: false,
 };
 
@@ -178,6 +179,10 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
       setFeedback({ type: 'error', message: 'Confirme que o pagamento foi recebido antes de renovar.' });
       return;
     }
+    if (!Number.isInteger(manualRenewalForm.durationDays) || manualRenewalForm.durationDays < 1 || manualRenewalForm.durationDays > 365) {
+      setFeedback({ type: 'error', message: 'Informe um período inteiro entre 1 e 365 dias.' });
+      return;
+    }
     if (manualRenewalForm.notes.trim().length < 5) {
       setFeedback({ type: 'error', message: 'Informe uma observação de pelo menos 5 caracteres para o histórico.' });
       return;
@@ -191,6 +196,7 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
         paymentMethod: manualRenewalForm.paymentMethod,
         reference: manualRenewalForm.reference.trim() || undefined,
         notes: manualRenewalForm.notes.trim(),
+        durationDays: manualRenewalForm.durationDays,
       });
       const endDate = new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(
         new Date(`${renewal.current_period_end}T00:00:00Z`)
@@ -199,7 +205,7 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
       setManualRenewalForm(emptyManualRenewal);
       setFeedback({
         type: 'success',
-        message: `Pagamento manual registrado para ${manualRenewalFor.arena.name}. Assinatura ativa até ${endDate}.`,
+        message: `Pagamento manual registrado para ${manualRenewalFor.arena.name}. Acesso renovado por ${manualRenewalForm.durationDays} dias, até ${endDate}.`,
       });
       await load();
     } catch (error: any) {
@@ -338,22 +344,22 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
                   </div>
 
                   <div className="flex flex-wrap gap-2">
-                    {sub && !sub.external_subscription_id && !sub.billing_provider && !['SUSPENDED', 'CANCELLED'].includes(sub.status) && (
+                    {sub && !sub.external_subscription_id && !sub.external_checkout_id && (!sub.billing_provider || sub.billing_provider === 'ASAAS') && !sub.checkout_url && !sub.checkout_operation_started_at && !['SUSPENDED', 'CANCELLED'].includes(sub.status) && (
                       <button
                         onClick={() => {
                           setManualRenewalFor({ arena, subscription: sub });
                           setManualRenewalForm(emptyManualRenewal);
                           setFeedback(null);
                         }}
-                        title="Registra um pagamento recebido fora do gateway e renova por um mês."
+                        title="Registra um pagamento recebido fora do gateway e permite escolher quantos dias renovar."
                         className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] font-black"
                       >
                         <Banknote className="w-3.5 h-3.5" /> Renovar manualmente
                       </button>
                     )}
                     {sub?.billing_provider && (
-                      <span className="self-center text-[10px] text-slate-500" title="Esta assinatura já está ligada a um gateway. Encerre a cobrança lá antes de registrar uma renovação manual.">
-                        {sub.external_subscription_id ? `Recorrência ${sub.billing_provider} vinculada` : `Checkout ${sub.billing_provider} pendente`}
+                      <span className="self-center text-[10px] text-slate-500" title="Recorrências e cobranças Asaas em aberto bloqueiam a renovação manual.">
+                        {sub.external_subscription_id ? `Recorrência ${sub.billing_provider} vinculada` : sub.checkout_url ? `Checkout ${sub.billing_provider} pendente` : `${sub.billing_provider} sem recorrência ativa`}
                       </span>
                     )}
                     {sub?.status !== 'ACTIVE' && (
@@ -400,7 +406,7 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
                 </div>
                 <h2 className="text-lg font-black text-white mt-2">{manualRenewalFor.arena.name}</h2>
                 <p className="text-xs text-slate-400 mt-1">
-                  O pagamento será registrado no histórico e o período será renovado por um mês.
+                  O pagamento recebido será registrado no histórico e o acesso será renovado pelo número de dias escolhido.
                 </p>
               </div>
               <button
@@ -426,6 +432,28 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
                 <div className="text-sm font-black text-white mt-1">
                   {manualRenewalFor.subscription.plan?.name || 'Plano'} · R$ {Number(manualRenewalFor.subscription.monthly_price).toFixed(2).replace('.', ',')}
                 </div>
+              </div>
+
+              {manualRenewalFor.subscription.billing_provider === 'ASAAS' && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-[11px] leading-relaxed text-amber-100">
+                  O vínculo Asaas será removido ao concluir. O sistema bloqueia a renovação se houver cobrança pendente ou vencida registrada, recorrência ativa ou checkout em andamento. Confirme também no Asaas que não existe cobrança aberta antes de registrar o pagamento manual.
+                </div>
+              )}
+
+              <div>
+                <label htmlFor="manual-renewal-duration-days" className="block text-xs font-bold text-slate-300 mb-1.5">Dias de acesso a renovar</label>
+                <input
+                  id="manual-renewal-duration-days"
+                  type="number"
+                  min={1}
+                  max={365}
+                  step={1}
+                  required
+                  value={manualRenewalForm.durationDays}
+                  onChange={event => setManualRenewalForm(prev => ({ ...prev, durationDays: Number(event.target.value) }))}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white outline-none focus:border-emerald-500"
+                />
+                <p className="text-[10px] text-slate-500 mt-1">De 1 a 365 dias. O valor registrado continua sendo o valor mensal do plano.</p>
               </div>
 
               <div>

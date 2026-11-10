@@ -187,6 +187,7 @@ export const saasService = {
     paymentMethod: 'PIX' | 'CASH' | 'BANK_TRANSFER' | 'CREDIT_CARD' | 'DEBIT_CARD' | 'OTHER';
     reference?: string;
     notes: string;
+    durationDays: number;
   }): Promise<{ current_period_end: string; amount_cents: number }> {
     if (!isSupabaseConfigured) throw new Error('Supabase não configurado.');
     const { data, error } = await supabase.functions.invoke('record-manual-subscription-renewal', {
@@ -195,6 +196,7 @@ export const saasService = {
         payment_method: input.paymentMethod,
         reference: input.reference || null,
         notes: input.notes,
+        duration_days: input.durationDays,
         confirmed_payment_received: true,
       },
     });
