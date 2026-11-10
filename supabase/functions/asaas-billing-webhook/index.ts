@@ -39,6 +39,23 @@ Deno.serve(async (req) => {
   if (!supported.has(eventType)) return json({ received: true, ignored: true });
 
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
+  if (eventType === "SUBSCRIPTION_INACTIVATED" || eventType === "SUBSCRIPTION_DELETED") {
+    const providerSubscriptionId = String(subscription.id || payment.subscription || "").trim();
+    if (!providerSubscriptionId) return json({ received: true, ignored: true, reason: "missing_subscription_id" });
+    const { data: linkedSubscription, error: lookupError } = await admin
+      .from("arena_subscriptions")
+      .select("id")
+      .eq("billing_provider", "ASAAS")
+      .eq("external_subscription_id", providerSubscriptionId)
+      .maybeSingle();
+    if (lookupError) {
+      console.error("Asaas subscription event lookup failed", lookupError.message);
+      return json({ error: "Event processing failed" }, 500);
+    }
+    // A delayed deletion event from an old recurrence must not cancel a
+    // subscription that has already migrated to one-off payments.
+    if (!linkedSubscription) return json({ received: true, ignored: true, reason: "stale_subscription_event" });
+  }
   const { data, error } = await admin.rpc("process_asaas_billing_event", {
     p_event_id: eventId,
     p_event_type: eventType,
@@ -60,3 +77,4 @@ Deno.serve(async (req) => {
   }
   return json({ received: true, ...data });
 });
+
