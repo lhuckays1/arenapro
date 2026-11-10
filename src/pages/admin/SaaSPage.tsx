@@ -357,11 +357,6 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
                         <Banknote className="w-3.5 h-3.5" /> Renovar manualmente
                       </button>
                     )}
-                    {sub?.billing_provider && (
-                      <span className="self-center text-[10px] text-slate-500" title="Recorrências e cobranças Asaas em aberto bloqueiam a renovação manual.">
-                        {sub.external_subscription_id ? `Recorrência ${sub.billing_provider} vinculada` : sub.checkout_url ? `Checkout ${sub.billing_provider} pendente` : `${sub.billing_provider} sem recorrência ativa`}
-                      </span>
-                    )}
                     {sub?.status !== 'ACTIVE' && (
                       <button
                         onClick={() => sub && handleSubscription(sub, 'ACTIVE')}
