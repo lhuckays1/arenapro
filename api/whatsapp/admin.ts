@@ -21,6 +21,7 @@ function isTypebotPreview(): boolean {
     && process.env.ARENAPRO_CHATBOT_PROVIDER === 'typebot';
 }
 
+// This must point to the public Viewer host, not the authenticated Builder host.
 function getTypebotConfig(): { url: string; typebot: string } {
   const url = process.env.ARENAPRO_TYPEBOT_URL?.replace(/\/+$/, '');
   const typebot = process.env.ARENAPRO_TYPEBOT_ID?.trim();
