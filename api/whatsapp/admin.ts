@@ -14,6 +14,68 @@ import {
 } from '../../src/server/whatsapp.js';
 
 const WEBHOOK_EVENTS = ['MESSAGES_UPSERT', 'CONNECTION_UPDATE'];
+const PREVIEW_TYPEBOT_ARENA_ID = 'de000000-0000-4000-8000-000000000001';
+
+function isTypebotPreview(): boolean {
+  return process.env.VERCEL_ENV === 'preview'
+    && process.env.ARENAPRO_CHATBOT_PROVIDER === 'typebot';
+}
+
+function getTypebotConfig(): { url: string; typebot: string } {
+  const url = process.env.ARENAPRO_TYPEBOT_URL?.replace(/\\/+$/, '');
+  const typebot = process.env.ARENAPRO_TYPEBOT_ID?.trim();
+  if (!url || !typebot) {
+    throw new ApiError(503, 'A integração Typebot ainda não foi configurada para este Preview.');
+  }
+  return { url, typebot };
+}
+
+async function configurePreviewTypebot(instanceName: string): Promise<void> {
+  const { url, typebot } = getTypebotConfig();
+
+  try {
+    await evolutionRequest(`/typebot/set/${encodeURIComponent(instanceName)}`, {
+      method: 'POST',
+      body: {
+        enabled: true,
+        url,
+        typebot,
+        triggerType: 'all',
+        expire: 30,
+        keywordFinish: 'SAIR',
+        delayMessage: 600,
+        unknownMessage: 'Não entendi sua mensagem. Pode explicar de outra forma?',
+        listeningFromMe: false,
+        stopBotFromMe: true,
+        keepOpen: false,
+        debounceTime: 1000,
+      },
+    });
+  } catch (error) {
+    if (error instanceof ApiError && error.upstreamStatusCode === 400) {
+      throw new ApiError(
+        503,
+        'A Evolution recusou o Typebot. Confirme se TYPEBOT_ENABLED=true e se a URL e o fluxo estão corretos.',
+      );
+    }
+    throw error;
+  }
+
+  // Desliga somente o webhook da instância de demonstração para não duplicar
+  // respostas com o n8n. O domínio .invalid impede entregas caso seja reativado.
+  await evolutionRequest(`/webhook/set/${encodeURIComponent(instanceName)}`, {
+    method: 'POST',
+    body: {
+      webhook: {
+        enabled: false,
+        url: 'https://example.invalid/disabled-preview',
+        byEvents: false,
+        base64: false,
+        events: [],
+      },
+    },
+  });
+}
 
 function getWebhookUrl(): string {
   const url = process.env.ARENAPRO_N8N_WEBHOOK_URL;
@@ -56,6 +118,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const action = typeof body.action === 'string' ? body.action : '';
     if (!arenaId || !/^[0-9a-f-]{36}$/i.test(arenaId)) throw new ApiError(400, 'Arena inválida.');
     const { supabase } = await requireArenaAdmin(req, arenaId);
+    if (
+      isTypebotPreview()
+      && arenaId !== (process.env.ARENAPRO_TYPEBOT_PREVIEW_ARENA_ID || PREVIEW_TYPEBOT_ARENA_ID)
+    ) {
+      throw new ApiError(403, 'No Preview, o WhatsApp está limitado à arena fictícia de demonstração.');
+    }
 
     const { data: connection, error: connectionError } = await supabase
       .from('arena_whatsapp_connections')
@@ -145,19 +213,23 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }
     }
 
-    await evolutionRequest(`/webhook/set/${encodeURIComponent(instanceName)}`, {
-      method: 'POST',
-      body: {
-        webhook: {
-          enabled: true,
-          url: getWebhookUrl(),
-          byEvents: false,
-          base64: false,
-          events: WEBHOOK_EVENTS,
-          headers: { 'X-ArenaPro-Webhook': token },
+    if (isTypebotPreview()) {
+      await configurePreviewTypebot(instanceName);
+    } else {
+      await evolutionRequest(`/webhook/set/${encodeURIComponent(instanceName)}`, {
+        method: 'POST',
+        body: {
+          webhook: {
+            enabled: true,
+            url: getWebhookUrl(),
+            byEvents: false,
+            base64: false,
+            events: WEBHOOK_EVENTS,
+            headers: { 'X-ArenaPro-Webhook': token },
+          },
         },
-      },
-    });
+      });
+    }
 
     let qrCode = getQrCode(instanceResponse);
     const statusFromInstance = toConnectionStatus(getConnectionState(instanceResponse));
