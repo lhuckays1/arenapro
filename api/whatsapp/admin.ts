@@ -22,7 +22,7 @@ function isTypebotPreview(): boolean {
 }
 
 function getTypebotConfig(): { url: string; typebot: string } {
-  const url = process.env.ARENAPRO_TYPEBOT_URL?.replace(/\/+$/, '');
+  const url = process.env.ARENAPRO_TYPEBOT_URL?.replace(/\\/+$/, '');
   const typebot = process.env.ARENAPRO_TYPEBOT_ID?.trim();
   if (!url || !typebot) {
     throw new ApiError(503, 'A integração Typebot ainda não foi configurada para este Preview.');
@@ -32,25 +32,39 @@ function getTypebotConfig(): { url: string; typebot: string } {
 
 async function configurePreviewTypebot(instanceName: string): Promise<void> {
   const { url, typebot } = getTypebotConfig();
+  const instancePath = encodeURIComponent(instanceName);
+  const config = {
+    enabled: true,
+    url,
+    typebot,
+    triggerType: 'all',
+    expire: 30,
+    keywordFinish: 'SAIR',
+    delayMessage: 600,
+    unknownMessage: 'Não entendi sua mensagem. Pode explicar de outra forma?',
+    listeningFromMe: false,
+    stopBotFromMe: true,
+  };
 
   try {
-    await evolutionRequest(`/typebot/set/${encodeURIComponent(instanceName)}`, {
-      method: 'POST',
-      body: {
-        enabled: true,
-        url,
-        typebot,
-        triggerType: 'all',
-        expire: 30,
-        keywordFinish: 'SAIR',
-        delayMessage: 600,
-        unknownMessage: 'Não entendi sua mensagem. Pode explicar de outra forma?',
-        listeningFromMe: false,
-        stopBotFromMe: true,
-        keepOpen: false,
-        debounceTime: 1000,
-      },
-    });
+    // Evolution 2.3.7 exposes create/find/update for Typebot; it does not
+    // implement the newer /typebot/set endpoint.
+    const existing = await evolutionRequest<unknown>(`/typebot/find/${instancePath}`);
+    const bots = Array.isArray(existing) ? existing.filter(isRecord) : [];
+    const matchingBot = bots.find((bot) => bot.typebot === typebot && bot.url === url);
+    const botToUpdate = matchingBot || bots.find((bot) => typeof bot.id === 'string');
+
+    if (botToUpdate && typeof botToUpdate.id === 'string') {
+      await evolutionRequest(`/typebot/update/${encodeURIComponent(botToUpdate.id)}/${instancePath}`, {
+        method: 'PUT',
+        body: config,
+      });
+    } else {
+      await evolutionRequest(`/typebot/create/${instancePath}`, {
+        method: 'POST',
+        body: config,
+      });
+    }
   } catch (error) {
     if (error instanceof ApiError && error.upstreamStatusCode === 400) {
       throw new ApiError(
@@ -63,7 +77,7 @@ async function configurePreviewTypebot(instanceName: string): Promise<void> {
 
   // Desliga somente o webhook da instância de demonstração para não duplicar
   // respostas com o n8n. O domínio .invalid impede entregas caso seja reativado.
-  await evolutionRequest(`/webhook/set/${encodeURIComponent(instanceName)}`, {
+  await evolutionRequest(`/webhook/set/${instancePath}`, {
     method: 'POST',
     body: {
       webhook: {
@@ -87,7 +101,7 @@ function getPhoneNumber(value: unknown): string | null {
   if (!isRecord(value)) return null;
   const instance = isRecord(value.instance) ? value.instance : {};
   const phone = value.number ?? value.phoneNumber ?? instance.number ?? instance.ownerJid;
-  return typeof phone === 'string' ? phone.replace(/@s\.whatsapp\.net$/, '') : null;
+  return typeof phone === 'string' ? phone.replace(/@s\\.whatsapp\\.net$/, '') : null;
 }
 
 async function updateStatus(
@@ -254,5 +268,3 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     return json(res, statusCode, { error: message });
   }
 }
-
-
