@@ -260,6 +260,48 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return json(res, 200, isRecord(data) ? data : { isBotMessage: false, paused: true });
     }
 
+    if (action === 'begin_bot_outbound') {
+      const phone = normalizePhone(requiredString(body.phone, 'phone', 40));
+      const text = requiredString(body.text, 'text', 4000);
+      if (phone.length < 10) throw new ApiError(400, 'Telefone de destino inválido.');
+      const { data, error } = await supabase.rpc('whatsapp_begin_bot_outbound', {
+        p_instance_name: instanceName,
+        p_token_hash: tokenHash,
+        p_conversation_key: conversationKey(instanceName, tokenHash, phone),
+        p_content_hash: normalizeOutboundMessageHash(text),
+      });
+      if (error || typeof data !== 'string') {
+        throw new ApiError(503, 'Não foi possível registrar o envio automático antes do envio.');
+      }
+      return json(res, 200, { outboundId: data });
+    }
+
+    if (action === 'complete_bot_outbound') {
+      const outboundId = requiredString(body.outboundId, 'outboundId', 36);
+      if (!/^[0-9a-f-]{36}$/i.test(outboundId)) throw new ApiError(400, 'Identificador de envio inválido.');
+      const messageId = typeof body.messageId === 'string' ? body.messageId.trim().slice(0, 160) : null;
+      const { data, error } = await supabase.rpc('whatsapp_complete_bot_outbound', {
+        p_instance_name: instanceName,
+        p_token_hash: tokenHash,
+        p_outbound_id: outboundId,
+        p_message_id: messageId,
+      });
+      if (error || data !== true) throw new ApiError(503, 'Não foi possível confirmar o registro do envio automático.');
+      return json(res, 200, { tracked: true });
+    }
+
+    if (action === 'cancel_bot_outbound') {
+      const outboundId = requiredString(body.outboundId, 'outboundId', 36);
+      if (!/^[0-9a-f-]{36}$/i.test(outboundId)) throw new ApiError(400, 'Identificador de envio inválido.');
+      const { data, error } = await supabase.rpc('whatsapp_cancel_bot_outbound', {
+        p_instance_name: instanceName,
+        p_token_hash: tokenHash,
+        p_outbound_id: outboundId,
+      });
+      if (error || data !== true) throw new ApiError(503, 'Não foi possível cancelar o registro do envio automático.');
+      return json(res, 200, { cancelled: true });
+    }
+
     if (action === 'send') {
       const phone = normalizePhone(requiredString(body.phone, 'phone', 40));
       const text = requiredString(body.text, 'text', 4000);
