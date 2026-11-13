@@ -56,6 +56,25 @@ function normalizeSlotLabel(value: unknown): string {
     : '';
 }
 
+export function matchesCourtLabel(
+  slotCourtName: unknown,
+  slotModality: unknown,
+  requestedCourtName: string,
+  requestedModality: string,
+): boolean {
+  const slotName = normalizeSlotLabel(slotCourtName);
+  const requestedName = normalizeSlotLabel(requestedCourtName);
+  const slotModalityLabel = normalizeSlotLabel(slotModality);
+  const requestedModalityLabel = normalizeSlotLabel(requestedModality);
+  if (!slotName || !requestedName || !slotModalityLabel || slotModalityLabel !== requestedModalityLabel) return false;
+  if (slotName === requestedName) return true;
+
+  // O agente às vezes envia o rótulo completo exibido ao cliente:
+  // "Quadra Demo 1 — Areia (Beach Tennis)". A API de disponibilidade
+  // retorna o nome da quadra e a modalidade em campos separados.
+  return requestedName === normalizeSlotLabel(`${String(slotCourtName).trim()} (${String(slotModality).trim()})`);
+}
+
 function isIsoDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const parsed = new Date(`${value}T00:00:00.000Z`);
@@ -155,8 +174,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           for (const slot of availability) {
             if (!isRecord(slot)) continue;
             if (
-              normalizeSlotLabel(slot.court_name) !== normalizeSlotLabel(courtName) ||
-              normalizeSlotLabel(slot.modality) !== normalizeSlotLabel(modality) ||
+              !matchesCourtLabel(slot.court_name, slot.modality, courtName, modality) ||
               localSlotTime(slot.start_at, timezone) !== time
             ) continue;
             if (typeof slot.court_id !== 'string' || typeof slot.start_at !== 'string') continue;
@@ -271,7 +289,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         p_content_hash: normalizeOutboundMessageHash(text),
       });
       if (error || typeof data !== 'string') {
-        throw new ApiError(503, 'Não foi possível registrar o envio automático antes do envio.');
+        throw new ApiError(503, 'Não foi possível registrar o botão automático antes do envio.');
       }
       return json(res, 200, { outboundId: data });
     }
@@ -356,5 +374,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     return json(res, statusCode, { error: message });
   }
 }
+
 
 
