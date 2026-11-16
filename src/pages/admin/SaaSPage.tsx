@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Banknote, Building2, CreditCard, Crown, Mail, Plus, RefreshCw, Search,
-  ShieldCheck, UserPlus, X, CheckCircle2, Clock3, Ban, AlertTriangle
+  ShieldCheck, UserPlus, X, CheckCircle2, Clock3, Ban, AlertTriangle, CalendarDays
 } from 'lucide-react';
 import { Arena, ArenaSubscription, SubscriptionPlan } from '../../types';
 import { arenaService } from '../../services/arena.service';
 import { saasService } from '../../services/saas.service';
 import { useAuth } from '../../contexts/AuthContext';
+import { isDateWithinInclusiveWindow, subscriptionCalendarDate, subscriptionGraceDays } from '../../utils/subscriptionAccess';
+import { translateSubscriptionStatus } from '../../utils/translation';
 
 interface SaaSPageProps {
   onNavigate: (path: string) => void;
@@ -40,7 +42,35 @@ const emptyForm = {
   planId: '',
 };
 
-import { translateSubscriptionStatus } from '../../utils/translation';
+const subscriptionDateFormat = new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' });
+
+function SubscriptionDates({ subscription }: { subscription: ArenaSubscription }) {
+  const start = subscription.current_period_start ? subscriptionCalendarDate(subscription.current_period_start) : null;
+  const end = subscription.current_period_end ? subscriptionCalendarDate(subscription.current_period_end) : null;
+  const graceDays = subscriptionGraceDays(subscription);
+  const graceEnd = subscription.status === 'PAST_DUE' && subscription.current_period_end && graceDays > 0
+    ? subscriptionCalendarDate(subscription.current_period_end, graceDays)
+    : null;
+  const expired = Boolean(subscription.current_period_end && !isDateWithinInclusiveWindow(subscription.current_period_end, 0));
+  const renderDate = (date: Date) => (
+    <time dateTime={date.toISOString().slice(0, 10)}>{subscriptionDateFormat.format(date)}</time>
+  );
+
+  return (
+    <div className="mt-2 flex items-start gap-1.5 text-xs leading-5 text-slate-300">
+      <CalendarDays aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+      <div className="flex flex-wrap gap-x-3">
+        {start && <span>Início {renderDate(start)}</span>}
+        {end ? (
+          <span className={expired ? 'font-bold text-amber-300' : 'font-bold text-slate-100'}>
+            {expired ? 'Venceu em' : 'Vence em'} {renderDate(end)}
+          </span>
+        ) : <span>Sem vencimento definido</span>}
+        {graceEnd && <span>Tolerância até {renderDate(graceEnd)}</span>}
+      </div>
+    </div>
+  );
+}
 
 export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
   const { setActiveArena } = useAuth();
@@ -198,14 +228,13 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
         notes: manualRenewalForm.notes.trim(),
         durationDays: manualRenewalForm.durationDays,
       });
-      const endDate = new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(
-        new Date(`${renewal.current_period_end}T00:00:00Z`)
-      );
+      const renewedThrough = subscriptionCalendarDate(renewal.current_period_end);
+      const renewalDates = renewedThrough ? `, até ${subscriptionDateFormat.format(renewedThrough)}` : '';
       setManualRenewalFor(null);
       setManualRenewalForm(emptyManualRenewal);
       setFeedback({
         type: 'success',
-        message: `Pagamento manual registrado para ${manualRenewalFor.arena.name}. Acesso renovado por ${manualRenewalForm.durationDays} dias, até ${endDate}.`,
+        message: `Pagamento manual registrado para ${manualRenewalFor.arena.name}. Acesso renovado por ${manualRenewalForm.durationDays} dias${renewalDates}.`,
       });
       await load();
     } catch (error: any) {
@@ -295,7 +324,7 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
 
       <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden">
         <div className="p-5 border-b border-slate-800">
-          <h2 className="text-sm font-black text-white">Tenants comerciais</h2>
+          <h2 className="text-sm font-black text-white">Arenas cadastradas</h2>
           <p className="text-xs text-slate-500 mt-1">Acesso operacional depende da assinatura.</p>
         </div>
 
@@ -323,6 +352,7 @@ export const SaaSPage: React.FC<SaaSPageProps> = ({ onNavigate }) => {
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-500 mt-1">/{arena.slug} • {arena.city || 'Cidade não informada'}</p>
+                    {sub && <SubscriptionDates subscription={sub} />}
                   </div>
 
                   <div className="min-w-[220px]">

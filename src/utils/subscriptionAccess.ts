@@ -9,17 +9,25 @@ export const hasOperationalSubscriptionAccess = (subscription: ArenaSubscription
   if (subscription.status === 'PAST_DUE' && subscription.current_period_end) {
     return isDateWithinInclusiveWindow(
       subscription.current_period_end,
-      Math.max(0, Number(subscription.grace_period_days ?? 5)),
+      subscriptionGraceDays(subscription),
       now,
     );
   }
   return false;
 };
 
-export const isDateWithinInclusiveWindow = (date: string, extraDays: number, now = new Date()) => {
+export const subscriptionGraceDays = (subscription: ArenaSubscription) =>
+  Math.max(0, Number(subscription.grace_period_days ?? 5));
+
+export const subscriptionCalendarDate = (date: string, extraDays = 0) => {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(date);
-  if (!match) return false;
-  const exclusiveEnd = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + extraDays + 1);
-  return now.getTime() < exclusiveEnd;
+  if (!match) return null;
+  const timestamp = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + extraDays);
+  return Number.isFinite(timestamp) ? new Date(timestamp) : null;
+};
+
+export const isDateWithinInclusiveWindow = (date: string, extraDays: number, now = new Date()) => {
+  const exclusiveEnd = subscriptionCalendarDate(date, extraDays + 1);
+  return exclusiveEnd !== null && now.getTime() < exclusiveEnd.getTime();
 };
 
