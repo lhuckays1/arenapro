@@ -9,21 +9,32 @@ interface ConnectionResponse {
   status?: ConnectionStatus;
   phoneNumber?: string | null;
   qrCode?: string | null;
+  pairingCode?: string | null;
+  supportsPhonePairing?: boolean;
   error?: string;
 }
 
 export const WhatsAppConnectionPage: React.FC<{ onNavigate: (path: string) => void }> = () => {
+  const { activeArena } = useAuth();
+  return <WhatsAppConnection key={activeArena?.id || ''} />;
+};
+
+function WhatsAppConnection() {
   const { activeArena, profile } = useAuth();
   const arenaId = activeArena?.id;
   const isArenaAdmin = profile?.role === 'ARENA_ADMIN' || profile?.role === 'SUPER_ADMIN';
   const [status, setStatus] = useState<ConnectionStatus>('DISCONNECTED');
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
   const [qrCode, setQrCode] = useState<string | null>(null);
+  const [pairingCode, setPairingCode] = useState<string | null>(null);
+  const [method, setMethod] = useState<'qr' | 'phone'>('qr');
+  const [phone, setPhone] = useState('');
+  const [supportsPhonePairing, setSupportsPhonePairing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const callApi = useCallback(async (action: 'status' | 'connect' | 'disconnect') => {
+  const callApi = useCallback(async (action: 'status' | 'connect' | 'pair' | 'disconnect', phoneToPair?: string, signal?: AbortSignal) => {
     if (!arenaId) throw new Error('Nenhuma arena está selecionada.');
     const { data: sessionData } = await supabase.auth.getSession();
     const accessToken = sessionData.session?.access_token;
@@ -35,23 +46,32 @@ export const WhatsAppConnectionPage: React.FC<{ onNavigate: (path: string) => vo
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ arenaId, action }),
+      signal,
+      body: JSON.stringify({ arenaId, action, phone: phoneToPair }),
     });
     const result = await response.json() as ConnectionResponse;
     if (!response.ok) throw new Error(result.error || 'Não foi possível atualizar a conexão.');
     return result;
   }, [arenaId]);
 
-  const refreshStatus = useCallback(async () => {
+  const refreshStatus = useCallback(async (signal?: AbortSignal) => {
     try {
-      const result = await callApi('status');
+      const result = await callApi('status', undefined, signal);
       const nextStatus = result.status || 'DISCONNECTED';
       setStatus(nextStatus);
       setPhoneNumber(result.phoneNumber || null);
-      if (nextStatus === 'CONNECTED') setQrCode(null);
+      setSupportsPhonePairing(Boolean(result.supportsPhonePairing));
+      if (nextStatus === 'CONNECTED') {
+        setQrCode(null);
+        setPairingCode(null);
+        setMessage(null);
+        setError(null);
+      } else if ('qrCode' in result) {
+        setQrCode(result.qrCode || null);
+      }
       return nextStatus;
     } catch (refreshError) {
-      setError(refreshError instanceof Error ? refreshError.message : 'Falha ao consultar a conexão.');
+      if (!signal?.aborted) setError(refreshError instanceof Error ? refreshError.message : 'Falha ao consultar a conexão.');
       return null;
     }
   }, [callApi]);
@@ -63,30 +83,45 @@ export const WhatsAppConnectionPage: React.FC<{ onNavigate: (path: string) => vo
     setMessage(null);
     setError(null);
     if (!arenaId || !isArenaAdmin) return;
-    void refreshStatus();
+    const controller = new AbortController();
+    void refreshStatus(controller.signal);
+    return () => controller.abort();
   }, [arenaId, isArenaAdmin, refreshStatus]);
 
   useEffect(() => {
-    if (status !== 'CONNECTING' || !arenaId || !isArenaAdmin) return;
-    const timer = window.setInterval(() => { void refreshStatus(); }, 5000);
-    return () => window.clearInterval(timer);
-  }, [arenaId, isArenaAdmin, refreshStatus, status]);
+    if (status !== 'CONNECTING' || !arenaId || !isArenaAdmin || loading) return;
+    const controller = new AbortController();
+    let pending = false;
+    const timer = window.setInterval(async () => {
+      if (pending) return;
+      pending = true;
+      try { await refreshStatus(controller.signal); } finally { pending = false; }
+    }, 5000);
+    return () => {
+      window.clearInterval(timer);
+      controller.abort();
+    };
+  }, [arenaId, isArenaAdmin, loading, refreshStatus, status]);
 
-  const connect = async () => {
+  const connect = async (selected: 'qr' | 'phone') => {
     setLoading(true);
     setError(null);
     setMessage(null);
+    setMethod(selected);
+    setQrCode(null);
+    setPairingCode(null);
     try {
-      const result = await callApi('connect');
+      const result = await callApi(selected === 'phone' ? 'pair' : 'connect', selected === 'phone' ? phone : undefined);
       setStatus(result.status || 'CONNECTING');
       setPhoneNumber(result.phoneNumber || null);
       setQrCode(result.qrCode || null);
-      setMessage(result.qrCode
+      setPairingCode(result.pairingCode || null);
+      setMessage(result.status === 'CONNECTED' || result.pairingCode ? null : result.qrCode
         ? 'Leia o QR Code no WhatsApp da arena. Ele pode expirar; gere outro se necessário.'
         : 'Solicitação enviada. Atualizando o estado da conexão...');
       if (result.status === 'CONNECTED') setQrCode(null);
     } catch (connectError) {
-      setError(connectError instanceof Error ? connectError.message : 'Não foi possível gerar o QR Code.');
+      setError(connectError instanceof Error ? connectError.message : 'Não foi possível iniciar o pareamento.');
     } finally {
       setLoading(false);
     }
@@ -101,6 +136,8 @@ export const WhatsAppConnectionPage: React.FC<{ onNavigate: (path: string) => vo
       setStatus(result.status || 'DISCONNECTED');
       setPhoneNumber(null);
       setQrCode(null);
+      setPairingCode(null);
+      setSupportsPhonePairing(Boolean(result.supportsPhonePairing));
       setMessage('WhatsApp desconectado desta arena.');
     } catch (disconnectError) {
       setError(disconnectError instanceof Error ? disconnectError.message : 'Não foi possível desconectar.');
@@ -118,7 +155,7 @@ export const WhatsAppConnectionPage: React.FC<{ onNavigate: (path: string) => vo
   }
 
   const connected = status === 'CONNECTED';
-  const statusLabel = connected ? 'Conectado' : status === 'CONNECTING' ? 'Aguardando leitura do QR Code' : 'Desconectado';
+  const statusLabel = connected ? 'Conectado' : status === 'CONNECTING' ? 'Aguardando pareamento' : 'Desconectado';
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -159,12 +196,12 @@ export const WhatsAppConnectionPage: React.FC<{ onNavigate: (path: string) => vo
             {!connected ? (
               <button
                 type="button"
-                onClick={() => void connect()}
+                onClick={() => void connect('qr')}
                 disabled={loading || !activeArena}
                 className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2 text-xs font-black text-slate-950 transition hover:bg-emerald-400 disabled:opacity-50"
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <QrCode className="h-4 w-4" />}
-                {status === 'CONNECTING' ? 'Gerar novo QR Code' : 'Conectar WhatsApp'}
+                {status === 'CONNECTING' && method === 'qr' ? 'Atualizar QR Code' : 'Conectar por QR Code'}
               </button>
             ) : (
               <button
@@ -177,10 +214,42 @@ export const WhatsAppConnectionPage: React.FC<{ onNavigate: (path: string) => vo
                 Desconectar
               </button>
             )}
+            {!connected && status === 'CONNECTING' && (
+              <button type="button" onClick={() => void disconnect()} disabled={loading}
+                className="rounded-xl border border-slate-700 px-3 py-2 text-xs font-bold text-slate-200 disabled:opacity-50">
+                Cancelar pareamento
+              </button>
+            )}
           </div>
         </div>
 
-        {qrCode && !connected && (
+        {supportsPhonePairing && !connected && (
+          <form onSubmit={(event) => { event.preventDefault(); void connect('phone'); }}
+            className="mt-6 flex flex-wrap items-end gap-3">
+            <label className="flex flex-col gap-2 text-xs font-bold text-slate-200">
+              WhatsApp com DDD
+              <input type="tel" autoComplete="tel" value={phone} onChange={(event) => setPhone(event.target.value)}
+                required maxLength={24} placeholder="(34) 99999-9999"
+                className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white" />
+            </label>
+            <button type="submit" disabled={loading || !activeArena}
+              className="rounded-xl border border-slate-700 px-4 py-2.5 text-xs font-bold text-slate-200 disabled:opacity-50">
+              {pairingCode ? 'Gerar outro código' : 'Conectar com número'}
+            </button>
+          </form>
+        )}
+
+        {pairingCode && !connected && (
+          <div className="mt-6 rounded-xl border border-emerald-500/20 bg-slate-950 p-5 text-center">
+            <p className="text-xs font-bold text-slate-200">Código de pareamento</p>
+            <p className="my-3 font-mono text-2xl tracking-widest text-emerald-300">{pairingCode}</p>
+            <p className="text-xs leading-5 text-slate-400">
+              No WhatsApp, abra Aparelhos conectados, escolha Conectar aparelho e depois Conectar com número de telefone.
+            </p>
+          </div>
+        )}
+
+        {qrCode && method === 'qr' && !connected && (
           <div className="mt-7 flex flex-col items-center rounded-xl border border-slate-800 bg-slate-950 p-5 text-center">
             <p className="mb-4 text-sm font-bold text-white">Escaneie com o WhatsApp</p>
             <img src={qrCode} alt="QR Code para conectar o WhatsApp da arena" className="h-64 w-64 rounded-lg bg-white p-2" />
@@ -190,10 +259,10 @@ export const WhatsAppConnectionPage: React.FC<{ onNavigate: (path: string) => vo
           </div>
         )}
 
-        {status === 'CONNECTING' && !qrCode && (
+        {status === 'CONNECTING' && !pairingCode && (!qrCode || method === 'phone') && (
           <div className="mt-6 flex items-center gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-xs text-amber-100">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Aguardando o QR Code ou a confirmação do WhatsApp. Use “Gerar novo QR Code” se esta tela não atualizar.
+            Aguardando o WhatsApp concluir o pareamento.
           </div>
         )}
 
@@ -217,6 +286,6 @@ export const WhatsAppConnectionPage: React.FC<{ onNavigate: (path: string) => vo
       </p>
     </div>
   );
-};
+}
 
 

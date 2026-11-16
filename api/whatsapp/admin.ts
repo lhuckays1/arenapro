@@ -1,4 +1,5 @@
 import type { ApiRequest, ApiResponse } from '../../src/server/whatsapp.js';
+import { evolutionGoConfig, evolutionGoControl, evolutionGoInstanceName, evolutionGoToken } from '../../src/server/evolutionGo.js';
 import {
   ApiError,
   evolutionRequest,
@@ -45,6 +46,7 @@ async function updateStatus(
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
+  res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return json(res, 405, { error: 'Método não permitido.' });
@@ -54,7 +56,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const body = requestBody(req);
     const arenaId = typeof body.arenaId === 'string' ? body.arenaId : '';
     const action = typeof body.action === 'string' ? body.action : '';
-    if (!arenaId || !/^[0-9a-f-]{36}$/i.test(arenaId)) throw new ApiError(400, 'Arena inválida.');
+    if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(arenaId)) throw new ApiError(400, 'Arena inválida.');
     const { supabase } = await requireArenaAdmin(req, arenaId);
 
     const { data: connection, error: connectionError } = await supabase
@@ -64,16 +66,63 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       .maybeSingle();
     if (connectionError) throw new ApiError(500, 'Não foi possível consultar a conexão do WhatsApp.');
 
+    const go = evolutionGoConfig();
+    const goName = evolutionGoInstanceName(arenaId);
+    const existingGo = connection?.instance_name === goName;
+    const startGo = Boolean(go && (!connection || connection.status === 'DISCONNECTED'));
+    const supportsPhonePairing = Boolean(go && (existingGo || startGo));
+
+    if (existingGo || (startGo && (action === 'connect' || action === 'pair'))) {
+      if (!go) throw new ApiError(503, 'O serviço do WhatsApp está temporariamente indisponível.');
+      if (action !== 'status' && action !== 'connect' && action !== 'pair' && action !== 'disconnect') {
+        throw new ApiError(400, 'Ação inválida.');
+      }
+      let phone: string | undefined;
+      if (action === 'pair') {
+        const digits = typeof body.phone === 'string' ? body.phone.replace(/\D/g, '') : '';
+        phone = digits.length === 10 || digits.length === 11 ? '55' + digits : digits;
+        if (!/^55[1-9]\d{9,10}$/.test(phone)) throw new ApiError(400, 'Informe um número brasileiro com DDD.');
+      }
+      if (!existingGo) {
+        const { error } = await supabase.rpc('register_arena_whatsapp_connection', {
+          p_arena_id: arenaId,
+          p_instance_name: goName,
+          p_token_hash: sha256(evolutionGoToken(go.secret, goName)),
+        });
+        if (error) throw new ApiError(500, 'Não foi possível registrar a conexão da arena.');
+      }
+      const result = await evolutionGoControl(go, arenaId.toLowerCase(), action, phone);
+      let status = result.status;
+      // Keep an in-progress pairing visible while the provider generates the QR.
+      if (action === 'status' && status === 'DISCONNECTED' && connection?.status === 'CONNECTING') {
+        status = 'CONNECTING';
+      }
+      if (connection?.status !== status || (result.phoneNumber && connection?.phone_number !== result.phoneNumber)) {
+        await updateStatus(supabase, arenaId, status, result.phoneNumber);
+      }
+      return json(res, 200, { ...result, status, supportsPhonePairing: true });
+    }
+
     if (action === 'status') {
-      if (!connection) return json(res, 200, { status: 'DISCONNECTED', phoneNumber: null });
-      const response = await evolutionRequest<unknown>(
-        `/instance/connectionState/${encodeURIComponent(connection.instance_name)}`,
-      );
+      if (!connection || (go && connection.status === 'DISCONNECTED')) {
+        return json(res, 200, { status: 'DISCONNECTED', phoneNumber: null, supportsPhonePairing });
+      }
+      let response: unknown;
+      try {
+        response = await evolutionRequest<unknown>(
+          `/instance/connectionState/${encodeURIComponent(connection.instance_name)}`,
+        );
+      } catch (error) {
+        if (!(error instanceof ApiError && error.upstreamStatusCode === 404)) throw error;
+        await updateStatus(supabase, arenaId, 'DISCONNECTED');
+        return json(res, 200, { status: 'DISCONNECTED', phoneNumber: null, supportsPhonePairing: Boolean(go) });
+      }
       const status = toConnectionStatus(getConnectionState(response));
       await updateStatus(supabase, arenaId, status, getPhoneNumber(response));
       return json(res, 200, {
         status,
         phoneNumber: getPhoneNumber(response) || connection.phone_number || null,
+        supportsPhonePairing: Boolean(go && status === 'DISCONNECTED'),
       });
     }
 
@@ -84,12 +133,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           `/instance/logout/${encodeURIComponent(connection.instance_name)}`,
           { method: 'DELETE' },
         );
-      } catch {
-        // Evolution may already have logged out the device. Keep the DB state
-        // consistent and let the next connection attempt fetch a fresh QR.
+      } catch (error) {
+        if (!(error instanceof ApiError && error.upstreamStatusCode === 404)) throw error;
       }
       await updateStatus(supabase, arenaId, 'DISCONNECTED');
-      return json(res, 200, { status: 'DISCONNECTED' });
+      return json(res, 200, { status: 'DISCONNECTED', supportsPhonePairing: Boolean(go) });
     }
 
     if (action !== 'connect') throw new ApiError(400, 'Ação inválida.');
