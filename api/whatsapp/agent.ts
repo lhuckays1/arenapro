@@ -163,6 +163,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (action === 'create_offer') {
       const phone = normalizePhone(requiredString(body.senderPhone, 'senderPhone', 40));
       const customerName = requiredString(body.customerName, 'customerName', 120);
+      const durationHours = body.durationHours === undefined ? 1 : Number(body.durationHours);
+      if ((body.durationHours !== undefined &&
+          typeof body.durationHours !== 'number' &&
+          !(typeof body.durationHours === 'string' && /^\d{1,2}$/.test(body.durationHours))) ||
+          !Number.isInteger(durationHours) || durationHours < 1 || durationHours > 24) {
+        throw new ApiError(400, 'Informe uma duração de 1 a 24 horas inteiras.');
+      }
       let courtId: string;
       let startAt: string;
 
@@ -212,13 +219,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if (!/^[0-9a-f-]{36}$/i.test(courtId) || Number.isNaN(Date.parse(startAt))) {
         throw new ApiError(400, 'Quadra ou horário inválido.');
       }
-      const { data, error } = await supabase.rpc('whatsapp_create_booking_offer', {
+      const { data, error } = await supabase.rpc('whatsapp_create_booking_period_offer', {
         p_instance_name: instanceName,
         p_token_hash: tokenHash,
         p_sender_phone: phone,
         p_customer_name: customerName,
         p_court_id: courtId,
         p_start_at: startAt,
+        p_duration_hours: durationHours,
       });
       if (error) throw new ApiError(409, error.message.slice(0, 250));
       return json(res, 200, { offer: data });
