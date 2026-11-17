@@ -66,7 +66,9 @@ export function matchesCourtLabel(
   const requestedName = normalizeSlotLabel(requestedCourtName);
   const slotModalityLabel = normalizeSlotLabel(slotModality);
   const requestedModalityLabel = normalizeSlotLabel(requestedModality);
-  if (!slotName || !requestedName || !slotModalityLabel || slotModalityLabel !== requestedModalityLabel) return false;
+  const modalityMatches = slotModalityLabel === requestedModalityLabel
+    || slotName.endsWith(` — ${requestedModalityLabel}`);
+  if (!slotName || !requestedName || !slotModalityLabel || !requestedModalityLabel || !modalityMatches) return false;
   if (slotName === requestedName) return true;
 
   // O agente pode omitir o complemento após o travessão ao repetir a opção
@@ -209,6 +211,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         }
 
         const candidates = Array.from(matchingSlots.values());
+        if (candidates.length === 0 && Array.isArray(availability) && availability.some((slot) =>
+          isRecord(slot) && matchesCourtLabel(slot.court_name, slot.modality, courtName, modality)
+        )) {
+          return json(res, 200, { offer: null, reason: 'slot_unavailable' });
+        }
         if (candidates.length !== 1) {
           throw new ApiError(409, 'Esse horário não está mais disponível. Consulte os horários novamente.');
         }
@@ -232,6 +239,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         p_start_at: startAt,
         p_duration_hours: durationHours,
       });
+      if (error && /Esse horário acabou de ficar indisponível/i.test(error.message)) {
+        return json(res, 200, { offer: null, reason: 'slot_unavailable' });
+      }
       if (error) throw new ApiError(409, error.message.slice(0, 250));
       return json(res, 200, { offer: data });
     }
