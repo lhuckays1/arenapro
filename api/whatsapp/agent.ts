@@ -111,24 +111,22 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       || '';
     if (!/^[a-f0-9]{64}$/i.test(token)) throw new ApiError(401, 'Credencial do webhook inválida.');
     const tokenHash = sha256(token);
-    const { supabase, arenaId, timezone } = await requireInstance(instanceName, tokenHash);
+    const { supabase, timezone } = await requireInstance(instanceName, tokenHash);
     const action = requiredString(body.action, 'action', 40);
 
     if (action === 'get_contact_name' || action === 'save_contact_name') {
       const phone = normalizePhone(requiredString(body.senderPhone, 'senderPhone', 40));
-      if (action === 'save_contact_name') {
-        const name = requiredString(body.contactName, 'contactName', 120).replace(/\s+/g, ' ');
-        const { error } = await supabase.from('whatsapp_contact_names').upsert(
-          { arena_id: arenaId, phone, name, updated_at: new Date().toISOString() },
-          { onConflict: 'arena_id,phone' },
-        );
-        if (error) throw new ApiError(500, 'Não foi possível salvar o nome do contato.');
-        return json(res, 200, { contactName: name });
-      }
-      const { data, error } = await supabase.from('whatsapp_contact_names')
-        .select('name').eq('arena_id', arenaId).eq('phone', phone).maybeSingle();
-      if (error) throw new ApiError(500, 'Não foi possível consultar o nome do contato.');
-      return json(res, 200, { contactName: data?.name ?? null });
+      const name = action === 'save_contact_name'
+        ? requiredString(body.contactName, 'contactName', 120).replace(/\s+/g, ' ')
+        : null;
+      const { data, error } = await supabase.rpc('whatsapp_contact_name', {
+        p_instance_name: instanceName,
+        p_token_hash: tokenHash,
+        p_phone: phone,
+        p_name: name,
+      });
+      if (error) throw new ApiError(500, 'Não foi possível acessar o nome do contato.');
+      return json(res, 200, { contactName: data ?? null });
     }
 
     if (action === 'authorize') {
