@@ -69,6 +69,10 @@ export function matchesCourtLabel(
   if (!slotName || !requestedName || !slotModalityLabel || slotModalityLabel !== requestedModalityLabel) return false;
   if (slotName === requestedName) return true;
 
+  // O agente pode omitir o complemento após o travessão ao repetir a opção
+  // escolhida pelo cliente. A seleção abaixo ainda exige um único horário e quadra.
+  if (slotName.startsWith(`${requestedName} — `)) return true;
+
   // O agente às vezes envia o rótulo completo exibido ao cliente:
   // "Quadra Demo 1 — Areia (Beach Tennis)". A API de disponibilidade
   // retorna o nome da quadra e a modalidade em campos separados.
