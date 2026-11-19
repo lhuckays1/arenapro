@@ -416,7 +416,7 @@ export const authService = {
     email: string
   ): Promise<void> {
     if (isSupabaseConfigured) {
-      const redirectTo = `${window.location.origin}/reset-password`;
+      const redirectTo = 'https://arenapro.online/reset-password';
 
       const { error } =
         await supabase.auth.resetPasswordForEmail(
