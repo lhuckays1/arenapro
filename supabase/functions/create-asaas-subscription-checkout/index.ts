@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
         name: `ArenaPro - ${String(arena.name).slice(0, 45)}`,
         description: `Assinatura mensal ArenaPro - ${String(arena.name).slice(0, 90)}`,
         value: Math.round(amount * 100) / 100, billingType: "UNDEFINED", chargeType: "RECURRENT",
-        subscriptionCycle: "MONTHLY", dueDateLimitDays: 3, externalReference: subscription.id, notificationEnabled: true,
+        subscriptionCycle: "MONTHLY", dueDateLimitDays: 3, externalReference: subscription.id, notificationEnabled: false,
       });
       const url = String(link?.url || ""), id = String(link?.id || "");
       if (!id || !url || new URL(url).protocol !== "https:") throw new Error("O Asaas não retornou um checkout válido.");
@@ -122,9 +122,9 @@ Deno.serve(async (req) => {
       customerId = String((found?.data || []).find((item: any) => item?.id)?.id || "");
     }
     if (customerId) {
-      await asaasRequest(`/customers/${encodeURIComponent(customerId)}`, asaasKey, "PUT", { name, email, cpfCnpj, mobilePhone: phone, postalCode, addressNumber, externalReference: subscription.id });
+      await asaasRequest(`/customers/${encodeURIComponent(customerId)}`, asaasKey, "PUT", { name, email, cpfCnpj, mobilePhone: phone, postalCode, addressNumber, externalReference: subscription.id, notificationDisabled: true });
     } else {
-      const customer = await asaasRequest("/customers", asaasKey, "POST", { name, email, cpfCnpj, mobilePhone: phone, postalCode, addressNumber, externalReference: subscription.id });
+      const customer = await asaasRequest("/customers", asaasKey, "POST", { name, email, cpfCnpj, mobilePhone: phone, postalCode, addressNumber, externalReference: subscription.id, notificationDisabled: true });
       customerId = String(customer?.id || "");
     }
     if (!customerId) throw new Error("O Asaas não retornou um cadastro de pagador válido.");
@@ -194,3 +194,4 @@ async function pendingLegacyHostedPayment(key: string, subscriptionId: string) {
     return json({ error: "Não foi possível localizar a cobrança no Asaas." }, 502);
   }
 }
+

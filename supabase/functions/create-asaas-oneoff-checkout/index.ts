@@ -98,9 +98,9 @@ Deno.serve(async (req) => {
         const found = await asaasRequest(`/customers?externalReference=${encodeURIComponent(subscription.id)}&limit=10`, asaasKey, "GET");
         customerId = String((found?.data || []).find((item: any) => item?.id)?.id || "");
       }
-      if (customerId) await asaasRequest(`/customers/${encodeURIComponent(customerId)}`, asaasKey, "PUT", { name, email, cpfCnpj, mobilePhone: phone, postalCode, addressNumber, externalReference: subscription.id });
+      if (customerId) await asaasRequest(`/customers/${encodeURIComponent(customerId)}`, asaasKey, "PUT", { name, email, cpfCnpj, mobilePhone: phone, postalCode, addressNumber, externalReference: subscription.id, notificationDisabled: true });
       else {
-        const createdCustomer = await asaasRequest("/customers", asaasKey, "POST", { name, email, cpfCnpj, mobilePhone: phone, postalCode, addressNumber, externalReference: subscription.id });
+        const createdCustomer = await asaasRequest("/customers", asaasKey, "POST", { name, email, cpfCnpj, mobilePhone: phone, postalCode, addressNumber, externalReference: subscription.id, notificationDisabled: true });
         customerId = String(createdCustomer?.id || "");
       }
       if (!customerId) throw new Error("O Asaas não retornou um cadastro de pagador válido.");
